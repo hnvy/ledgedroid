@@ -16,10 +16,10 @@
 
 
 ## NOTE TO USER!
-
-Ledgedroid is built on hledger, which is free (beer and speech) software maintained
+- Ledgedroid is built on hledger, which is free (beer and speech) software maintained
 by Simon et al. If Ledgedroid is useful to you, please consider
 [sponsoring hledger](https://hledger.org/sponsor.html).
+- The app icon was drawn using the beautiful [Aseprite](https://www.aseprite.org/). Buy it and you won't regret it!
 
 ## Quick glance
 
@@ -141,7 +141,3 @@ valuation (`-V`, `-X`), lots, timeclock and timedot. Query terms:
 account patterns, `acct:`, `desc:`, `payee:`, `cur:`, `status:`,
 `date:`, `amt:`, `tag:`, `depth:`, `not:` (not `date2:`, `code:`,
 `real:`, `expr:` and the like).
-
-## Icon
-
-The app icon was drawn using the beautiful [Aseprite](https://www.aseprite.org/). Buy it and you won't regret it!
