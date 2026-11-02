@@ -2,11 +2,12 @@
   <img src="./Logo.png" alt="Ledgedroid icon" width="256">
 </p>
 
+<h1 align="center">Ledgedroid</h1>
+
 <p align="center">
   A small Android app for <a href="https://hledger.org">hledger</a> journals on your phone.
 </p>
 
-<h1 align="center">Ledgedroid</h1>
 <p align="center">
   <a href="https://hledger.org/sponsor.html"><img src="https://img.shields.io/badge/sponsor-hledger-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white" alt="Sponsor hledger"></a>
   <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+">
