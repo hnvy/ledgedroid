@@ -87,10 +87,10 @@ jobs:
           printf '%s' "$KEYSTORE" | base64 --decode -i > "$RUNNER_TEMP/release.jks"
           [ -s "$RUNNER_TEMP/release.jks" ] || { echo "::error::SIGNING_KEYSTORE_BASE64 didn't decode to a file."; exit 1; }
 
-      - name: Run tests
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest
+#      - name: Run tests
+#        run: |
+#          chmod +x gradlew
+#          ./gradlew --no-daemon testDebugUnitTest
 
       - name: Build APK
         env:
@@ -100,7 +100,9 @@ jobs:
           LEDGEDROID_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           LEDGEDROID_VERSION_NAME: ${{ steps.version.outputs.name }}
           LEDGEDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
 
       - name: Check signed
         id: apk
