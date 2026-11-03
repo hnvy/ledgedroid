@@ -62,6 +62,11 @@ yes*.
 
 Any issues, please feel free to flag.
 
+
+Best wishes,
+
+Harvey R., MD
+
 ## Quick glance
 
 - Balance, forecast, balance sheet, income statement and budget reports, by
