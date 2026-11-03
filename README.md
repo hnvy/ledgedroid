@@ -38,6 +38,7 @@ by Simon et al. If Ledgedroid is useful to you, please consider
 - Pin and hide accounts
 - Keep your journal healthy with a **Check**
 - **Rename** and **Recategorise** accounts, payees, and transactions rapidly
+- Share text/SMS/notifications (eg from bank) and match transactions using RegEx patterns
 
 ## How to use it
 
