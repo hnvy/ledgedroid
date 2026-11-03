@@ -83,7 +83,7 @@ Any issues, please feel free to flag.
 |---|---|---|---|
 | **Purpose** | Viewer + editor focused on reports | Data-entry app | Android front end to hledger-web |
 | **Where the data lives** | Local journal file, re-read when you return to the app (works with Syncthing, Dropbox etc.) | Local journal file | An hledger-web server |
-| **Server need** | No | No | Yes (hledger-web 1.10 or 1.14+) |
+| **Server need** | No; all offline | No; all offline | Yes (hledger-web 1.10 or 1.14+) |
 | **Supported syntax** | Most of hledger's: periodic and auto posting rules, costs, assertions, virtual postings, `include`, `alias`, `apply account`, `P` prices, account types | ledger/hledger-like, not the full syntax | Whatever hledger-web parses, since hledger reads the file |
 | **Balance reports** | `balance`, balance sheet, income statement, budget, multi-period columns, depth, `-H`, `-V`/`-X` valuation, `--forecast`, `--auto` | None; lists transactions only | Hierarchical account list with current balances (seems that reports are planned) |
 | **Transaction list + search** | Per-account register with running balance, advanced In/Out split, advanced filters; search with hledger query terms | List of all transactions, search (including by amount) | Transaction list filtered by account name |
