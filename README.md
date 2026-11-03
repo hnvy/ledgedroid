@@ -24,15 +24,15 @@ by Simon et al. If Ledgedroid is useful to you, please consider
 
 ## Quick glance
 
-- Balance, balance sheet, income statement and budget reports, by
+- Balance, forecast, balance sheet, income statement and budget reports, by
   period, with trend charts
-- hledger queries like `desc:`, `amt:>100`, `tag:trip` and `-M -H`,
-  typed straight into the filter
-- A full entry form, an `hledger add`-style quick add, templates, a
-  home screen widget and a quick settings tile
-- A colour for each top-level account, shaded by depth
-- Pinned accounts that stay at the top, and hidden ones that stay out
-  of the way
+- hledger queries like `desc:`, `amt:>100`, `tag:trip`, and many more typed straight into the filter
+- Save commonly used reports/filters
+- Set reminders for recurring payments and add them with **one click**
+- A full entry form, an `hledger add`-style quick add, **templates**, a
+  home screen **widget** and a **quick settings tile**
+- Customisable **colours** for each account and its subaccounts
+- Pin and hide accounts
 
 ## How to use it
 
