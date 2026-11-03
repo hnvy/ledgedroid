@@ -25,6 +25,32 @@ by Simon et al. If Ledgedroid is useful to you, please consider
 - The app icon was drawn using the beautiful [Aseprite](https://www.aseprite.org/). Buy it and you won't regret it!
 - **In addition to GPL 3.0, finances generated from this project and its forks MUST go to hledger.**
 
+## Is this... AI?
+
+TL;DR yes, and I'm sorry if it doesn't sit right with you. You're welcome to take what you like from it and write your own version by hand. It's all under GPL 3.0 :)
+
+Besides, I'm not here to flog you anything... just sharing what I think would be akin to "this helped me, maybe it'll help you too".
+
+Longer version:
+
+I used to love adding transactions to my hledger journal using my very old vimscripts on phone.
+
+That was until... I missed a few transactions, costing me an absolute shed load of time to reconcile my ledger. ON MULTIPLE OCCASIONS! I felt like I was looking for pennies in the sofa...
+
+I work full-time and barely have bandwidth to learn Java / Kotlin to make a half-decent app. I really tried to not succumb to the AI pressure, but frankly the time lost reconciling was too much.
+
+So anyway, with a bit of sample code / logic, I managed to get this.
+
+I've been using it for some time and honestly it's a joy.
+
+Naturally, it's under the GPL 3.0 (+ finances must go to hledger). Other than that, do what you want with it.
+
+Is it a replacement to hledger? Absolutely not.
+
+Will it save you time when adding transactions on-the-go whilst making sure your balances are still not atrociously incorrect? Absolutely yes*.
+
+Any issues, please feel free to flag.
+
 ## Quick glance
 
 - Balance, forecast, balance sheet, income statement and budget reports, by
