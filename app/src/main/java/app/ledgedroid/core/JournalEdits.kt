@@ -43,7 +43,7 @@ data class EditPlan(val what: String, val changes: List<LineChange>, val notChan
 
 /**
  * Changes to the journal's text that touch many lines: renaming an account, moving a payee's postings to
- * another account, clearing postings, adding a balance assertion, declaring accounts and payees. Only the
+ * another account, declaring accounts and payees. Only the
  * main journal file is changed; matches in included files are listed in [EditPlan.notChanged].
  */
 object JournalEdits {
@@ -155,39 +155,6 @@ object JournalEdits {
         }
         includedMatches(journal) { t -> Payees.of(t.description) == payee && t.postings.any { it.account == from } }?.let { notChanged.add(it) }
         return EditPlan("Move $payee's $from postings to $to", changes, notChanged)
-    }
-
-    /** Set the status mark of each posting line in [lines] (cleared, pending or none). */
-    fun setPostingStatus(text: String, postingLines: Collection<Int>, status: Status, what: String): EditPlan {
-        val lines = splitLines(text)
-        val mark = when (status) {
-            Status.CLEARED -> '*'
-            Status.PENDING -> '!'
-            Status.UNMARKED -> null
-        }
-        val changes = postingLines.sorted().mapNotNull { n ->
-            val line = lines.getOrNull(n - 1) ?: return@mapNotNull null
-            val pl = parsePostingLine(line) ?: return@mapNotNull null
-            if (pl.status == mark) null else LineChange(n, line, pl.render(status = mark))
-        }
-        return EditPlan(what, changes)
-    }
-
-    /**
-     * Add a balance assertion "= [amount]" to the posting on line [line], after its amount (and cost),
-     * before any comment. The posting must have an amount written: without one, = would make it an
-     * assignment.
-     */
-    fun addAssertion(text: String, line: Int, commodity: String, quantity: BigDecimal, styles: Styles): EditPlan {
-        val l = splitLines(text).getOrNull(line - 1) ?: throw EntryException("Line $line isn't in the journal")
-        val pl = parsePostingLine(l) ?: throw EntryException("Line $line isn't a posting")
-        val body = pl.rest.substringBefore(';')
-        val comment = pl.rest.substring(body.length)
-        if (body.isBlank()) throw EntryException("The posting on line $line has no amount, so an assertion would set it")
-        if (body.contains('=')) throw EntryException("The posting on line $line already has a balance assertion")
-        val assertion = "= " + Entry.formatExact(commodity, quantity, styles)
-        val newRest = body.trimEnd() + " " + assertion + (if (comment.isNotEmpty()) "  " + comment else "")
-        return EditPlan("Add the balance assertion $assertion", listOf(LineChange(line, l, pl.render(rest = newRest))))
     }
 
     /**

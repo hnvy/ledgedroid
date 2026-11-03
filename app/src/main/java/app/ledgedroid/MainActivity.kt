@@ -1,15 +1,14 @@
 package app.ledgedroid
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import app.ledgedroid.ui.AccountNameDialog
-import app.ledgedroid.ui.ChartsScreen
 import app.ledgedroid.ui.EditPreviewDialog
 import app.ledgedroid.ui.HealthScreen
-import app.ledgedroid.ui.ReconcileScreen
 import app.ledgedroid.ui.RecategoriseDialog
 import app.ledgedroid.ui.SharePatternsScreen
 import app.ledgedroid.core.QuickHints
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import android.content.Intent
 import android.os.Bundle
 
@@ -30,7 +29,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 
 import androidx.compose.runtime.remember
@@ -237,26 +235,13 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) },
                     onSign = vm::setRegisterSign,
                     onFilter = vm::setRegisterFilter,
-                    onReconcile = { vm.openReconcile(screen.target.account, screen.target.includeSubaccounts) },
                 )
-            }
-
-            is Screen.Reconcile -> {
-                BackHandler(onBack = vm::back)
-                val j = journal
-                if (j != null) ReconcileScreen(j, screen.account, screen.subaccounts, onSave = vm::saveReconcile, onBack = vm::back)
             }
 
             Screen.Health -> {
                 BackHandler(onBack = vm::back)
                 val j = journal
                 if (j != null) HealthScreen(j, onDeclare = vm::previewDeclare, onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) }, onBack = vm::back)
-            }
-
-            Screen.Charts -> {
-                BackHandler(onBack = vm::back)
-                val j = journal
-                if (j != null) ChartsScreen(j, onBack = vm::back)
             }
 
             Screen.SharePatterns -> {

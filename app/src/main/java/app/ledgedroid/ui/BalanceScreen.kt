@@ -276,10 +276,6 @@ fun BalanceScreen(
                                 onClick = { menuOpen = false; onOpen(Screen.SavedViews) },
                             )
                             DropdownMenuItem(
-                                text = { Text("Charts") },
-                                onClick = { menuOpen = false; onOpen(Screen.Charts) },
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Journal health") },
                                 onClick = { menuOpen = false; onOpen(Screen.Health) },
                             )

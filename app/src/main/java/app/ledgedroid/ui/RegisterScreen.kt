@@ -25,7 +25,6 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -56,8 +55,6 @@ fun RegisterScreen(
     onOpenTransaction: (Int) -> Unit,
     onSign: (AmountSign) -> Unit,
     onFilter: (RegisterFilter) -> Unit,
-    /** Reconcile this account against a statement. */
-    onReconcile: () -> Unit = {},
 ) {
     val lc = LocalLedgerColors.current
     Scaffold(
@@ -86,7 +83,6 @@ fun RegisterScreen(
                         }
                     }
                 },
-                actions = { TextButton(onClick = onReconcile) { Text("Reconcile") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },

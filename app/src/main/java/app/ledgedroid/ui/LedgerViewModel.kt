@@ -6,7 +6,6 @@ import app.ledgedroid.IncludeFolder
 import app.ledgedroid.core.EditPlan
 import app.ledgedroid.core.IncludeResolver
 import app.ledgedroid.core.JournalEdits
-import app.ledgedroid.core.Reconcile
 import app.ledgedroid.core.Schedule
 import app.ledgedroid.core.SharePattern
 import app.ledgedroid.core.SharedEntry
@@ -310,14 +309,8 @@ sealed interface Screen {
     /** Adding a transaction one prompt at a time (Settings › Quick add), starting with templateId if set. */
     data class QuickAdd(val templateId: String? = null, val shared: SharedEntry? = null) : Screen
 
-    /** Reconciling an account against a statement. */
-    data class Reconcile(val account: String, val subaccounts: Boolean) : Screen
-
     /** Journal health, like hledger check. */
     data object Health : Screen
-
-    /** Net worth and spending charts. */
-    data object Charts : Screen
 
     /** The patterns for reading shared text. */
     data object SharePatterns : Screen
@@ -1363,47 +1356,6 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 changed(src, w.undo, "${pending.message} (${if (n == 1) "1 line" else "$n lines"})")
                 applyWritten(src, w.text)
             }.onFailure { e -> _message.value = failureMessage(e, "make the change") }
-        }
-    }
-
-    // ------------------------------------------------------------------ reconciling
-
-    /** Reconcile [account] against a statement. */
-    fun openReconcile(account: String, subaccounts: Boolean) = push(Screen.Reconcile(account, subaccounts))
-
-    /**
-     * Save a reconciliation: clear the ticked postings, unmark the unticked ones, and with [assertion]
-     * add a balance assertion of [statement] to the last cleared posting. One change, with Undo.
-     */
-    fun saveReconcile(r: Reconcile, ticked: Set<Int>, statement: java.math.BigDecimal?, assertion: Boolean) {
-        val styles = (_load.value as? LoadState.Loaded)?.journal?.styles ?: return
-        val (clear, unclear) = r.changes(ticked)
-        val target = if (assertion && statement != null) r.assertionTarget(ticked) else null
-        if (clear.isEmpty() && unclear.isEmpty() && target == null) {
-            back(); return
-        }
-        val src = source
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    rewrite(src, "reconciled ${r.account}") { text ->
-                        var t = JournalEdits.setPostingStatus(text, clear, Status.CLEARED, "clear").apply(text)
-                        t = JournalEdits.setPostingStatus(t, unclear, Status.UNMARKED, "unclear").apply(t)
-                        if (target != null) t = JournalEdits.addAssertion(t, target.posting.line, r.commodity, statement!!, styles).apply(t)
-                        t
-                    }
-                }
-            }
-            result.onSuccess { w ->
-                back()
-                val parts = listOfNotNull(
-                    clear.size.takeIf { it > 0 }?.let { "$it cleared" },
-                    unclear.size.takeIf { it > 0 }?.let { "$it unmarked" },
-                    target?.let { "balance assertion added" },
-                )
-                changed(src, w.undo, "Reconciled ${r.account}: ${parts.joinToString(", ")}")
-                applyWritten(src, w.text)
-            }.onFailure { e -> _message.value = failureMessage(e, "save the reconciliation") }
         }
     }
 
