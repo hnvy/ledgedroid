@@ -16,6 +16,15 @@ sealed interface QuickStep {
 /** A suggestion at a prompt. [value] goes in the field; choosing a [template] fills in the rest. */
 data class QuickCompletion(val value: String, val template: Template? = null)
 
+/** Defaults picked out of shared text (see [ShareParse]): they become the first prompts' defaults. */
+data class QuickHints(
+    val date: LocalDate? = null,
+    val payee: String? = null,
+    val account: String? = null,
+    /** The first amount, with its currency, eg $4.50. */
+    val amount: String? = null,
+)
+
 /** What a prompt asks, what Enter on an empty answer gives ([default]), and a hint about what else works. */
 data class QuickPrompt(val label: String, val default: String?, val hint: String)
 
@@ -30,6 +39,7 @@ data class QuickAddState(
     val template: Template? = null,
     val log: List<Pair<String, String>> = emptyList(),
     val previous: QuickAddState? = null,
+    val hints: QuickHints = QuickHints(),
 ) {
     /** The postings answered so far. */
     val entered: Int
@@ -73,16 +83,17 @@ class QuickAdd(
 ) {
     private val defaultCommodity get() = suggestions?.defaultCommodity.orEmpty()
 
-    fun start(date: LocalDate = today) =
-        QuickAddState(TransactionDraft(date, postings = emptyList()))
+    fun start(date: LocalDate = today, hints: QuickHints = QuickHints()) =
+        QuickAddState(TransactionDraft(hints.date ?: date, postings = emptyList()), hints = hints)
 
     /**
      * Start with [template] already chosen, dated [date]: as if the date and the template had been
      * answered, so the first prompt is the template's first account, and Back still goes to the payee
      * and the date.
      */
-    fun startWith(template: Template, date: LocalDate = today): QuickAddState {
-        val dated = (submit(start(date), date.toString()) as QuickResult.Next).state
+    fun startWith(template: Template, date: LocalDate = today, hints: QuickHints = QuickHints()): QuickAddState {
+        val d = hints.date ?: date
+        val dated = (submit(start(d, hints), d.toString()) as QuickResult.Next).state
         return (submit(dated, template.name, QuickCompletion(template.name, template)) as QuickResult.Next).state
     }
 
@@ -90,12 +101,13 @@ class QuickAdd(
         QuickStep.Date -> QuickPrompt("Date", s.draft.date.toString(), "eg 11-02, yesterday or -2")
         QuickStep.Payee -> QuickPrompt(
             "Payee",
-            null,
+            s.hints.payee,
             if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note",
         )
         is QuickStep.Account -> QuickPrompt(
             "Account ${step.index + 1}",
-            templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() },
+            templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() }
+                ?: s.hints.account?.takeIf { step.index == 0 },
             if (step.index >= 2) "Enter with nothing, or ., to finish" else "Tab for accounts",
         )
         is QuickStep.Amount -> QuickPrompt(
@@ -200,6 +212,8 @@ class QuickAdd(
 
     /** The template's amount for posting [i], or else (from the second on) what balances the ones before. */
     private fun defaultAmount(s: QuickAddState, i: Int): String? {
+        // A shared amount wins over a template's: it's what was actually spent.
+        if (i == 0) s.hints.amount?.let { return it }
         templatePosting(s, i)?.takeIf { it.amount.isNotBlank() }?.let { return show(it.amount, it.commodity) }
         if (i == 0) return null
         val sums = LinkedHashMap<String, BigDecimal>()

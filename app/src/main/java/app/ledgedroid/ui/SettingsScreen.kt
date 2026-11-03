@@ -1,5 +1,7 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.AlertSettings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +68,21 @@ fun SettingsScreen(
     onQuickAdd: (Boolean) -> Unit,
     quickAddDefault: Boolean,
     onQuickAddDefault: (Boolean) -> Unit,
+    /** Quick add puts its defaults in the box as text, not as a hint. */
+    quickAddFill: Boolean = false,
+    onQuickAddFill: (Boolean) -> Unit = {},
+    /** Share into quick add: open the patterns screen. */
+    onSharePatterns: () -> Unit = {},
+    sharePatternCount: Int = 0,
+    /** Reminders and budget alerts. */
+    alertSettings: AlertSettings = AlertSettings(),
+    notificationsAllowed: Boolean = true,
+    scheduledTemplates: Int = 0,
+    onAlertSettings: (AlertSettings) -> Unit = {},
+    /** Included files: the folder they're read from. */
+    includeFolder: String? = null,
+    onChooseIncludeFolder: () -> Unit = {},
+    onForgetIncludeFolder: () -> Unit = {},
 ) {
     LaunchedEffect(Unit) { onRefresh() }
     val lc = LocalLedgerColors.current
@@ -96,6 +113,36 @@ fun SettingsScreen(
                 quickAddDefault,
                 onQuickAddDefault,
             )
+            ToggleRow(
+                "Fill in quick add's defaults",
+                if (quickAddFill) "Each prompt starts with its default as text you can edit, like the form (eg a template's account)."
+                else "Each prompt shows its default as a grey hint; Enter takes it, typing replaces it.",
+                quickAddFill,
+                onQuickAddFill,
+            )
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onSharePatterns).padding(horizontal = 24.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("Share patterns", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Share a bank message or a note to Ledgedroid to start quick add with it filled in. " +
+                                if (sharePatternCount == 0) "Add patterns of your own to read other wording."
+                                else "$sharePatternCount pattern${if (sharePatternCount == 1) "" else "s"} of your own.",
+                        style = MaterialTheme.typography.bodySmall, color = LocalLedgerColors.current.mutedInk,
+                    )
+                }
+                Text("Patterns…", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+
+            Heading("Notifications")
+            NotificationsSection(alertSettings, notificationsAllowed, scheduledTemplates, onAlertSettings)
+
+            Heading("Included files")
+            IncludedFilesSection(includeFolder, journal?.includedFiles.orEmpty(),
+                journal?.warnings?.any { it.message.contains("include directive") } == true || journal?.includedFiles?.isNotEmpty() == true,
+                onChooseIncludeFolder, onForgetIncludeFolder)
 
             Heading("Appearance")
             ToggleRow(

@@ -64,6 +64,7 @@ import app.ledgedroid.core.Entry
 import app.ledgedroid.core.EntrySuggestions
 import app.ledgedroid.core.QuickAdd
 import app.ledgedroid.core.QuickAddState
+import app.ledgedroid.core.QuickHints
 import app.ledgedroid.core.QuickCompletion
 import app.ledgedroid.core.QuickPrompt
 import app.ledgedroid.core.QuickResult
@@ -94,6 +95,11 @@ fun QuickAddScreen(
     startDate: LocalDate,
     /** Start with this template already chosen (from the widget or the Templates screen). */
     startTemplate: Template? = null,
+    /** What was picked out of shared text, as the first prompts' defaults; and the text, to show. */
+    startHints: QuickHints = QuickHints(),
+    /** Put each prompt's default in the box as text to edit, like the form, instead of as a grey hint. */
+    fillDefaults: Boolean = false,
+    sharedText: String? = null,
     onSave: (TransactionDraft, Boolean) -> Unit,
     onToForm: (TransactionDraft) -> Unit,
     onClose: () -> Unit,
@@ -103,11 +109,14 @@ fun QuickAddScreen(
         QuickAdd(styles, suggestions, templates, LocalDate.now(), declaredPayeesOnly)
     }
     var state: QuickAddState by remember {
-        mutableStateOf(startTemplate?.let { engine.startWith(it, startDate) } ?: engine.start(startDate))
+        mutableStateOf(startTemplate?.let { engine.startWith(it, startDate, startHints) } ?: engine.start(startDate, startHints))
     }
-    var field: TextFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    /** The text a prompt starts with: its default when filling them in, except at the last look. */
+    fun startText(s: QuickAddState): String =
+        if (fillDefaults && s.step != QuickStep.Confirm) engine.prompt(s).default.orEmpty() else ""
+    var field: TextFieldValue by remember { startText(state).let { mutableStateOf(TextFieldValue(it, TextRange(it.length))) } }
     // What was typed before Tab, and which suggestion Tab is on (-1: none, the typed text).
-    var stem: String by remember { mutableStateOf("") }
+    var stem: String by remember { mutableStateOf(startText(state)) }
     var cycle: Int by remember { mutableIntStateOf(-1) }
     var problem: String? by remember { mutableStateOf<String?>(null) }
     val completions: List<QuickCompletion> = remember(state, stem) { engine.completions(state, stem) }
@@ -122,10 +131,11 @@ fun QuickAddScreen(
 
     fun go(next: QuickAddState) {
         state = next
-        stem = ""
+        val text = startText(next)
+        stem = text
         cycle = -1
         problem = null
-        setText("")
+        setText(text)
     }
 
     /** Tab (or Shift+Tab): the next (or previous) suggestion, coming back round to what was typed. */
@@ -187,6 +197,16 @@ fun QuickAddScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                if (sharedText != null) item {
+                    Text(
+                        "Shared: " + sharedText.replace('\n', ' ').take(240),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = lc.mutedInk,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
                 itemsIndexed(state.log) { _, line: Pair<String, String> ->
                     val (label, value) = line
                     Row {

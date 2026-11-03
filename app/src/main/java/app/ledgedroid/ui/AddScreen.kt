@@ -231,6 +231,9 @@ fun AddScreen(
                                 CheckMenuItem("Align amounts", amountLayout.aligned) {
                                     onAmountLayout(amountLayout.copy(aligned = it))
                                 }
+                                CheckMenuItem("Write .00 on whole amounts", amountLayout.padDecimals) {
+                                    onAmountLayout(amountLayout.copy(padDecimals = it))
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Amount spacing…") },
                                     onClick = { menuOpen = false; choosingLayout = true },
@@ -954,6 +957,23 @@ private fun AmountLayoutDialog(
                         color = LocalLedgerColors.current.mutedInk,
                     )
                 }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .toggleable(value = layout.padDecimals, role = Role.Switch, onValueChange = { onLayout(layout.copy(padDecimals = it)) }),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Write .00 on whole amounts", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (layout.padDecimals) "\$4 is written \$4.00, the commodity's usual decimals"
+                            else "Amounts are written as typed: \$4 stays \$4, \$4.50 stays \$4.50",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LocalLedgerColors.current.mutedInk,
+                        )
+                    }
+                    Switch(checked = layout.padDecimals, onCheckedChange = null)
+                }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     shape = MaterialTheme.shapes.small,
@@ -970,8 +990,8 @@ private fun AmountLayoutDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = if (layout != AmountLayout.DEFAULT) {
-            { TextButton(onClick = { onLayout(AmountLayout.DEFAULT) }) { Text("Reset") } }
+        dismissButton = if (layout != AmountLayout.APP_DEFAULT) {
+            { TextButton(onClick = { onLayout(AmountLayout.APP_DEFAULT) }) { Text("Reset") } }
         } else null,
     )
 }

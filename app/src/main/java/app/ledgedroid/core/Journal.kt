@@ -87,6 +87,8 @@ data class Transaction(
     val lastLine: Int = line,
     /** Generated from a periodic rule by --forecast; not in the journal file. line is the rule's. */
     val forecast: Boolean = false,
+    /** The included file it's in (its lines are that file's), or null for the main journal file. */
+    val file: String? = null,
 )
 
 /** A posting in a periodic transaction rule (~) or auto posting rule (=). */
@@ -111,6 +113,8 @@ data class PeriodicRule(
     val postings: List<RulePosting>,
     val line: Int,
     val lastLine: Int,
+    /** The included file it's in, or null for the main journal file. */
+    val file: String? = null,
 ) {
     /** The dates this rule generates a transaction on, within [requested] (hledger's periodicTransactionDates). */
     fun dates(requested: DateSpan): List<LocalDate> {
@@ -122,7 +126,14 @@ data class PeriodicRule(
 }
 
 /** An auto posting rule: "= QUERY" followed by postings to add after each matching posting. */
-data class AutoRule(val queryText: String, val query: Query, val postings: List<RulePosting>, val line: Int)
+data class AutoRule(
+    val queryText: String,
+    val query: Query,
+    val postings: List<RulePosting>,
+    val line: Int,
+    /** The included file it's in, or null for the main journal file. */
+    val file: String? = null,
+)
 
 /** Where an account's type comes from (see [Journal.typeInfo]). */
 enum class TypeSource {
@@ -143,7 +154,13 @@ enum class TypeSource {
 data class TypeInfo(val type: AccountType?, val source: TypeSource, val from: String? = null)
 
 /** A problem found while reading a journal. Errors stop the report; warnings don't. */
-data class JournalIssue(val line: Int, val message: String, val isFailedAssertion: Boolean = false)
+data class JournalIssue(
+    val line: Int,
+    val message: String,
+    val isFailedAssertion: Boolean = false,
+    /** The included file it's in, or null for the main journal file. */
+    val file: String? = null,
+)
 
 class JournalException(val line: Int, message: String, val excerpt: String = "") : Exception(message) {
     override fun toString(): String = if (line > 0) "line $line: $message" else message.orEmpty()
@@ -157,6 +174,10 @@ data class Journal(
     val declaredAccounts: List<String> = emptyList(),
     /** Account types set by type: tags on account directives. */
     val declaredTypes: Map<String, AccountType> = emptyMap(),
+    /** Market prices from P directives, in file order. */
+    val prices: List<MarketPrice> = emptyList(),
+    /** The files read through include directives, by name, in the order they were included. */
+    val includedFiles: List<String> = emptyList(),
     /** Payees declared with payee directives, in declaration order, like hledger's jdeclaredpayees. */
     val declaredPayees: List<String> = emptyList(),
     val warnings: List<JournalIssue> = emptyList(),

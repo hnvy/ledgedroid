@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -250,6 +251,8 @@ internal fun AccountActionsSheet(
     onColor: () -> Unit = {},
     /** Hidden accounts still count in totals (set in Hidden accounts), so hiding only takes rows away. */
     hideKeepsTotals: Boolean = false,
+    /** Rename the account across the journal; null hides the item. */
+    onRename: (() -> Unit)? = null,
 ) {
     val lc = LocalLedgerColors.current
     val name = account.removePrefix("$UNBUDGETED:")
@@ -273,6 +276,14 @@ internal fun AccountActionsSheet(
                 leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = lc.pin) },
                 modifier = Modifier.clickable(onClick = onPin),
             )
+            if (onRename != null) {
+                ListItem(
+                    headlineContent = { Text("Rename…") },
+                    supportingContent = { Text("Rename it, and its subaccounts, everywhere in the journal; you'll see every change first") },
+                    leadingContent = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onRename),
+                )
+            }
             if (branchColor != null) {
                 val top = BranchColors.topLevel(account)
                 ListItem(

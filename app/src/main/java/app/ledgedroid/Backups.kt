@@ -335,10 +335,10 @@ object BackupScheduler {
 /** After an app update, make sure the scheduled backup job is still there. */
 class BootReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) BackupScheduler.update(
-            context,
-            Backups(context).settings().schedule
-        )
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        BackupScheduler.update(context, Backups(context).settings().schedule)
+        // Reminders and budget alerts too.
+        Alerts.schedule(context)
     }
 }
 

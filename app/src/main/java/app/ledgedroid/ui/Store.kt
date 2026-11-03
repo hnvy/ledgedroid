@@ -3,6 +3,8 @@ package app.ledgedroid.ui
 import android.content.SharedPreferences
 import app.ledgedroid.core.AccountListMode
 import app.ledgedroid.core.AccountType
+import app.ledgedroid.core.SharePattern
+import app.ledgedroid.core.Schedule
 import app.ledgedroid.core.DraftPosting
 import app.ledgedroid.core.PeriodPreset
 import app.ledgedroid.core.ReportInterval
@@ -26,6 +28,7 @@ internal object Store {
     private const val KEY_INCOME_SEEDED = "incomeViewSeeded"
     private const val KEY_BUDGET_EXAMPLE_REMOVED = "budgetExampleRemoved"
     private const val KEY_ACCOUNT_TYPES = "accountTypes"
+    private const val KEY_SHARE_PATTERNS = "sharePatterns"
 
     /** Account types set in Settings, by account name. */
     fun readAccountTypes(prefs: SharedPreferences): Map<String, AccountType> {
@@ -50,12 +53,28 @@ internal object Store {
     }
 
     fun readTemplates(prefs: SharedPreferences): List<Template> = readList(prefs, KEY_TEMPLATES) { o ->
-        Template(o.getString("id"), o.getString("name"), draftFromJson(o.getJSONObject("draft")))
+        Template(o.getString("id"), o.getString("name"), draftFromJson(o.getJSONObject("draft")), o.optJSONObject("schedule")?.let(::scheduleFromJson))
     }
 
     fun writeTemplates(prefs: SharedPreferences, templates: List<Template>) =
         writeList(prefs, KEY_TEMPLATES, templates) { t ->
             JSONObject().put("id", t.id).put("name", t.name).put("draft", draftToJson(t.draft))
+                .apply { t.schedule?.let { put("schedule", JSONObject().put("every", it.every).put("unit", it.unit.name).put("start", it.start.toString())) } }
+        }
+
+    private fun scheduleFromJson(o: JSONObject): Schedule? = runCatching {
+        Schedule(o.getInt("every"), Schedule.Unit.valueOf(o.getString("unit")), java.time.LocalDate.parse(o.getString("start")))
+    }.getOrNull()
+
+    /** The person's patterns for reading shared text (Settings › Share patterns), in the order tried. */
+    fun readSharePatterns(prefs: SharedPreferences): List<SharePattern> = readList(prefs, KEY_SHARE_PATTERNS) { o ->
+        SharePattern(o.getString("id"), o.getString("name"), o.getString("regex"),
+            o.optString("templateId").ifEmpty { null }, o.optBoolean("enabled", true))
+    }
+
+    fun writeSharePatterns(prefs: SharedPreferences, patterns: List<SharePattern>) =
+        writeList(prefs, KEY_SHARE_PATTERNS, patterns) { p ->
+            JSONObject().put("id", p.id).put("name", p.name).put("regex", p.regex).put("templateId", p.templateId ?: "").put("enabled", p.enabled)
         }
 
     /**

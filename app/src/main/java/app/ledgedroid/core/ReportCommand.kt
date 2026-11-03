@@ -53,6 +53,8 @@ data class ReportCommand(
     val empty: Boolean = false,
     val sortByAmount: Boolean = false,
     val cost: Boolean = false,
+    /** -V, -X COMMODITY or --value=end[,COMMODITY]: show market values from the journal's P prices. */
+    val value: ValueTarget? = null,
     val invert: Boolean = false,
     /** The query terms, including status: terms for -U/-P/-C, ready for [Query.parseTerms]. */
     val queryTerms: List<String> = emptyList(),
@@ -64,7 +66,7 @@ data class ReportCommand(
     /** True if any option was given (not just query terms). */
     val hasOptions: Boolean
         get() = kind != null || interval != null || historical || auto || forecast != null || span != null ||
-                depth != null || drop != null || mode != null || empty || sortByAmount || cost || invert ||
+                depth != null || drop != null || mode != null || empty || sortByAmount || cost || value != null || invert ||
                 statusFlags.isNotEmpty()
 
     /** A short description of the options, eg ["budget", "monthly", "running balances", "auto postings"]. */
@@ -87,6 +89,7 @@ data class ReportCommand(
         if (empty) add("-E")
         if (sortByAmount) add("by amount")
         if (cost) add("at cost")
+        value?.let { add(it.describe()) }
         if (invert) add("inverted")
         if (statusFlags.isNotEmpty()) add(statusFlags.joinToString(" or "))
     }
@@ -130,6 +133,7 @@ data class ReportCommand(
             var empty = false
             var sort = false
             var cost = false
+            var valueTarget: ValueTarget? = null
             var invert = false
             val terms = ArrayList<String>()
             val status = ArrayList<String>()
@@ -249,8 +253,19 @@ data class ReportCommand(
                     }
 
                     "-T", "--row-total", "-A", "--average" -> Unit // always shown with columns
-                    "-V", "-X", "--value", "--market", "--exchange" ->
-                        problem("Market values aren't supported (the journal's P prices are skipped); -B converts to cost")
+                    "-V", "--market" -> if (noValue()) valueTarget = ValueTarget(null)
+                    "-X", "--exchange" -> value()?.let { v ->
+                        if (v.isBlank()) problem("-X needs a commodity, eg -X EUR") else valueTarget = ValueTarget(v.trim().removeSurrounding("\""))
+                    }
+                    "--value" -> value()?.let { v ->
+                        val type = v.substringBefore(',').trim().lowercase()
+                        val comm = if (',' in v) v.substringAfter(',').trim().removeSurrounding("\"").ifEmpty { null } else null
+                        when (type) {
+                            "end", "e" -> valueTarget = ValueTarget(comm)
+                            "cost", "c" -> cost = true
+                            else -> problem("--value: only end is supported (values on the last day of each period), eg --value=end,EUR")
+                        }
+                    }
 
                     else -> problem("$name isn't an option Ledgedroid knows. Tap ⓘ for the list.")
                 }
@@ -274,6 +289,7 @@ data class ReportCommand(
                 empty = empty,
                 sortByAmount = sort,
                 cost = cost,
+                value = valueTarget,
                 invert = invert,
                 queryTerms = terms + statusTerms.distinct(),
                 error = error,

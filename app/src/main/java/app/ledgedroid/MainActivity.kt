@@ -1,5 +1,15 @@
 package app.ledgedroid
 
+import app.ledgedroid.ui.AccountNameDialog
+import app.ledgedroid.ui.ChartsScreen
+import app.ledgedroid.ui.EditPreviewDialog
+import app.ledgedroid.ui.HealthScreen
+import app.ledgedroid.ui.ReconcileScreen
+import app.ledgedroid.ui.RecategoriseDialog
+import app.ledgedroid.ui.SharePatternsScreen
+import app.ledgedroid.core.QuickHints
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import android.content.Intent
 import android.os.Bundle
 
@@ -79,6 +89,12 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW -> intent.data?.let { vm.open(it) }
             // The widget, quick settings tile or launcher shortcut.
             AddEntry.ACTION_ADD -> vm.startDefaultAdd(intent.getStringExtra(AddEntry.EXTRA_TEMPLATE))
+            // Text shared from another app (a bank SMS, a notification, a note): quick add, filled in.
+            Intent.ACTION_SEND -> {
+                val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT))
+                    .filter { it.isNotBlank() }.distinct().joinToString("\n")
+                if (text.isNotBlank()) vm.startShared(text)
+            }
         }
     }
 }
@@ -99,6 +115,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val hideZeroPins by vm.hideZeroPins.collectAsStateWithLifecycle()
     val quickAdd by vm.quickAdd.collectAsStateWithLifecycle()
     val quickAddDefault by vm.quickAddDefault.collectAsStateWithLifecycle()
+    val quickAddFill by vm.quickAddFill.collectAsStateWithLifecycle()
     val pinned by vm.pinned.collectAsStateWithLifecycle()
     val treeStyle by vm.treeStyle.collectAsStateWithLifecycle()
     val branchHues by vm.branchHues.collectAsStateWithLifecycle()
@@ -113,6 +130,31 @@ fun LedgerApp(vm: LedgerViewModel) {
     val chooseBackupFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setBackupFolder(uri)
     }
+    val chooseIncludeFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.setIncludeFolder(uri)
+    }
+    // Turning on reminders or budget alerts asks for notifications first (Android 13 and later).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var notificationsAllowed by remember { mutableStateOf(Alerts.allowed(context)) }
+    var pendingAlerts by remember { mutableStateOf<AlertSettings?>(null) }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsAllowed = granted
+        pendingAlerts?.let { vm.setAlertSettings(it) }
+        pendingAlerts = null
+    }
+    val setAlerts = { s: AlertSettings ->
+        if (s.any && !Alerts.allowed(context) && android.os.Build.VERSION.SDK_INT >= 33) {
+            pendingAlerts = s
+            askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else vm.setAlertSettings(s)
+    }
+    val alertSettings by vm.alertSettings.collectAsStateWithLifecycle()
+    val includeFolder by vm.includeFolder.collectAsStateWithLifecycle()
+    val sharePatterns by vm.sharePatterns.collectAsStateWithLifecycle()
+    val pendingEdit by vm.pendingEdit.collectAsStateWithLifecycle()
+    val entrySuggestions by vm.suggestions.collectAsStateWithLifecycle()
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var recategorising by remember { mutableStateOf<String?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.onResume() }
 
     // Messages show over every screen, so Undo is offered wherever the change was made.
@@ -156,6 +198,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onApplyView = vm::toggleView,
                     onSaveView = vm::saveView,
                     onAdd = { vm.startAdd() },
+                    onRename = { renaming = it },
                     onQuickAdd = { vm.startQuickAdd() },
                     quickAddButton = quickAdd,
                     quickAddDefault = quickAddDefault,
@@ -194,7 +237,31 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) },
                     onSign = vm::setRegisterSign,
                     onFilter = vm::setRegisterFilter,
+                    onReconcile = { vm.openReconcile(screen.target.account, screen.target.includeSubaccounts) },
                 )
+            }
+
+            is Screen.Reconcile -> {
+                BackHandler(onBack = vm::back)
+                val j = journal
+                if (j != null) ReconcileScreen(j, screen.account, screen.subaccounts, onSave = vm::saveReconcile, onBack = vm::back)
+            }
+
+            Screen.Health -> {
+                BackHandler(onBack = vm::back)
+                val j = journal
+                if (j != null) HealthScreen(j, onDeclare = vm::previewDeclare, onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) }, onBack = vm::back)
+            }
+
+            Screen.Charts -> {
+                BackHandler(onBack = vm::back)
+                val j = journal
+                if (j != null) ChartsScreen(j, onBack = vm::back)
+            }
+
+            Screen.SharePatterns -> {
+                BackHandler(onBack = vm::back)
+                SharePatternsScreen(sharePatterns, templates, onChange = vm::setSharePatterns, read = { t, p -> vm.readShared(t, p) }, onBack = vm::back)
             }
 
             is Screen.TransactionDetail -> {
@@ -257,6 +324,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onBack = vm::back,
                     onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) },
                     onRepeat = vm::startAddFrom,
+                    onRecategorise = { recategorising = screen.name },
                 )
             }
 
@@ -269,6 +337,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onEdit = vm::editTemplate,
                     onMove = vm::moveTemplate,
                     onDelete = vm::deleteTemplate,
+                    onSchedule = vm::setTemplateSchedule,
                 )
             }
 
@@ -292,6 +361,17 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onQuickAdd = vm::setQuickAdd,
                     quickAddDefault = quickAddDefault,
                     onQuickAddDefault = vm::setQuickAddDefault,
+                    quickAddFill = quickAddFill,
+                    onQuickAddFill = vm::setQuickAddFill,
+                    onSharePatterns = { vm.push(Screen.SharePatterns) },
+                    sharePatternCount = sharePatterns.size,
+                    alertSettings = alertSettings,
+                    notificationsAllowed = notificationsAllowed,
+                    scheduledTemplates = templates.count { it.schedule != null },
+                    onAlertSettings = setAlerts,
+                    includeFolder = includeFolder,
+                    onChooseIncludeFolder = { chooseIncludeFolder.launch(vm.journalUri()) },
+                    onForgetIncludeFolder = { vm.setIncludeFolder(null) },
                     ui = backupUi,
                     onBack = vm::back,
                     onRefresh = vm::refreshBackups,
@@ -378,6 +458,9 @@ fun LedgerApp(vm: LedgerViewModel) {
                         // Only the first: after Add, next the next one starts plain.
                         startTemplate = screen.templateId?.takeIf { addedInSession == 0 }
                             ?.let { id -> templates.firstOrNull { it.id == id } },
+                        startHints = screen.shared?.takeIf { addedInSession == 0 }?.hints() ?: QuickHints(),
+                        sharedText = screen.shared?.text?.takeIf { addedInSession == 0 },
+                        fillDefaults = quickAddFill,
                         onSave = vm::saveQuick,
                         onToForm = vm::quickToForm,
                         onClose = vm::back,
@@ -385,6 +468,27 @@ fun LedgerApp(vm: LedgerViewModel) {
                 }
             }
         }
+
+        // Changes across the journal, over whichever screen started them: asked for, then shown line by line.
+        renaming?.let { account ->
+            AccountNameDialog(
+                title = "Rename $account",
+                initial = account,
+                detail = "Renames it and its subaccounts everywhere in the journal: transactions, budget and auto posting rules, " +
+                        "and account directives. Pins, hiding and account types follow. You'll see every change first.",
+                confirm = "Show changes",
+                suggestions = entrySuggestions,
+                onConfirm = { to -> renaming = null; vm.previewRename(account, to) },
+                onDismiss = { renaming = null },
+            )
+        }
+        recategorising?.let { payee ->
+            val j = journal
+            if (j != null) RecategoriseDialog(j, payee, entrySuggestions,
+                onConfirm = { from, to -> recategorising = null; vm.previewRecategorise(payee, from, to) },
+                onDismiss = { recategorising = null })
+        }
+        pendingEdit?.let { EditPreviewDialog(it, onApply = vm::applyEdit, onCancel = vm::cancelEdit) }
 
         // Above the screens' own bottom bars (the add form's save bar), so Undo is always reachable.
         SnackbarHost(

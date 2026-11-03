@@ -18,8 +18,9 @@ import java.time.LocalDate
  * Periodic transaction rules (~) are kept for budget reports. Auto posting rules (=) are applied
  * when [auto] is true, like hledger --auto.
  *
- * Prices (P), include, timeclock/timedot and lot tracking are skipped. Anything skipped that could
- * change balances is reported as a warning.
+ * Market prices (P) are read for valuation (-V, -X). Included files are read when [JournalParser.parse] is
+ * given a way to find them (see [Includes]). Timeclock/timedot and lot tracking are skipped. Anything
+ * skipped that could change balances is reported as a warning.
  */
 class JournalParser(
     private val today: LocalDate = LocalDate.now(),
@@ -32,6 +33,24 @@ class JournalParser(
     private val keepTransaction: ((Int) -> Boolean)? = null,
 ) {
     fun parse(text: String): Journal = ParseRun(text, today, auto, keepTransaction).run()
+
+    /**
+     * Parse [text] with its include directives read through [includes] (see [Includes]). Line numbers stay
+     * those of each file; what comes from an included file is marked with its name. Errors in an included
+     * file say which file they're in.
+     */
+    fun parse(text: String, includes: IncludeResolver?): Journal {
+        if (includes == null || !Includes.mentioned(text)) return parse(text)
+        val x = Includes.expand(text, includes)
+        val journal = try {
+            ParseRun(x.text, today, auto, keepTransaction).run()
+        } catch (e: JournalException) {
+            val (file, line) = x.origin(e.line)
+            if (file == null) throw JournalException(line, e.message.orEmpty(), e.excerpt)
+            throw JournalException(0, "In $file, line $line: ${e.message}", e.excerpt)
+        }
+        return Includes.remap(journal, x)
+    }
 }
 
 internal class RawPosting(
@@ -115,6 +134,7 @@ private class ParseRun(
     private val applyAccounts = ArrayList<String>()
     private val accountDecls = LinkedHashMap<String, AccountType?>()
     private val payeeDecls = LinkedHashSet<String>()
+    private val prices = ArrayList<MarketPrice>()
 
     private val warnings = ArrayList<JournalIssue>()
     private val txns = ArrayList<RawTransaction>()
@@ -183,6 +203,7 @@ private class ParseRun(
             declaredAccounts = accountDecls.keys.toList(),
             declaredTypes = accountDecls.mapNotNull { (k, v) -> v?.let { k to it } }.toMap(),
             declaredPayees = payeeDecls.toList(),
+            prices = prices.toList(),
             warnings = warnings + assertionIssues,
             periodicRules = periodicRules.toList(),
             autoRules = autoRules.toList(),
@@ -323,7 +344,8 @@ private class ParseRun(
             "include" -> skippedIncludes++
             "comment" -> block = Block.COMMENT
             "payee" -> payeeName(arg)?.let { payeeDecls.add(it) }
-            "P", "tag", "N", "C", "A", "bucket", "test" -> Unit
+            "P" -> prices.add(parsePrice(arg, lineNo, line))
+            "tag", "N", "C", "A", "bucket", "test" -> Unit
             else -> warnings.add(
                 JournalIssue(
                     lineNo,
@@ -344,6 +366,35 @@ private class ParseRun(
             if (close < 0) t.substringBefore(';') else t.substring(1, close)
         } else t.substringBefore(';')
         return name.trim().takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * P DATE [TIME] COMMODITY PRICE, like hledger's marketpricedirectivep: P 2026-10-01 AAPL $170.50, or
+     * P 2026-10-01 "EUR" 1.08 USD. The commodity may be quoted.
+     */
+    private fun parsePrice(arg: String, lineNo: Int, line: String): MarketPrice {
+        var rest = arg.substringBefore(';').trim()
+        val dateText = rest.substringBefore(' ').substringBefore('\t')
+        val date = parseDate(dateText, lineNo, line, year)
+        rest = rest.drop(dateText.length).trim()
+        // An optional time of day, which only orders prices on the same day.
+        Regex("^\\d{1,2}:\\d{2}(:\\d{2})?\\s+").find(rest)?.let { rest = rest.drop(it.value.length) }
+        val commodity: String
+        if (rest.startsWith('"')) {
+            val close = rest.indexOf('"', 1)
+            if (close < 0) throw JournalException(lineNo, "P: the commodity's closing quote is missing", line)
+            commodity = rest.substring(1, close)
+            rest = rest.substring(close + 1).trim()
+        } else {
+            commodity = rest.takeWhile { !it.isWhitespace() }
+            rest = rest.drop(commodity.length).trim()
+        }
+        if (commodity.isEmpty() || rest.isEmpty()) {
+            throw JournalException(lineNo, "P needs a date, a commodity and its price, eg P 2026-10-01 AAPL \$170.50", line)
+        }
+        val (price, _) = parseAmountText(rest, lineNo, observe = true)
+            ?: throw JournalException(lineNo, "P: \"$rest\" isn't an amount", line)
+        return MarketPrice(date, commodity, Amount(price.commodity, price.quantity), lineNo)
     }
 
     // ---------------------------------------------------------------- transactions
@@ -747,7 +798,8 @@ private class ParseRun(
         if (skippedIncludes > 0) warnings.add(
             JournalIssue(
                 0,
-                "Skipped $skippedIncludes include directive(s). Included files aren't read; open a combined journal instead."
+                "Skipped $skippedIncludes include directive(s): included files are only read once the journal's " +
+                        "folder is chosen, in Settings › Included files."
             )
         )
     }

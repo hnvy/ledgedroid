@@ -341,6 +341,8 @@ private fun Comment(text: String) {
 
 /** The transaction's lines in the journal file. */
 private fun sourceText(lines: List<String>, t: Transaction): String? {
+    // Lines of an included file aren't the main file's: no text to show, nothing to change here.
+    if (t.file != null) return null
     if (t.line <= 0 || t.line > lines.size) return null
     return lines.subList(t.line - 1, t.lastLine.coerceIn(t.line, lines.size)).joinToString("\n").trimEnd()
 }

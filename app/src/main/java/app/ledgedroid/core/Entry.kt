@@ -43,6 +43,12 @@ data class AmountLayout(
     val aligned: Boolean = false,
     val spaces: Int = DEFAULT_SPACES,
     val column: Int = DEFAULT_COLUMN,
+    /**
+     * Write amounts at the commodity's usual precision, padding whole ones ($4 as $4.00), as before. Off,
+     * they're written with the decimals they have: as typed, and a calculated one like those it's worked
+     * out from.
+     */
+    val padDecimals: Boolean = true,
 ) {
     /** The gap actually written when not aligned. */
     val gap: Int get() = spaces.coerceIn(MIN_SPACES, MAX_SPACES)
@@ -57,11 +63,20 @@ data class AmountLayout(
         /** hledger print's decimal mark column (Hledger.Data.Posting.defaultDecimalMarkColumn). */
         const val DEFAULT_COLUMN = 53
         val DEFAULT = AmountLayout()
+
+        /** What the app starts with: amounts aligned on their decimal marks. */
+        val APP_DEFAULT = AmountLayout(aligned = true)
     }
 }
 
 /** A saved starting point for a regular transaction, like "Coffee" or "Fuel". Its date is ignored. */
-data class Template(val id: String, val name: String, val draft: TransactionDraft)
+data class Template(
+    val id: String,
+    val name: String,
+    val draft: TransactionDraft,
+    /** When it recurs, for reminders (Settings › Reminders), or null. */
+    val schedule: Schedule? = null,
+)
 
 data class DraftCheck(
     /** Problems with the transaction as a whole. */
@@ -81,7 +96,14 @@ data class DraftCheck(
 }
 
 /** One line to write: a posting with its amount worked out. quantity is null only while the form can't be balanced. */
-data class ResolvedPosting(val account: String, val commodity: String, val quantity: BigDecimal?, val comment: String)
+data class ResolvedPosting(
+    val account: String,
+    val commodity: String,
+    val quantity: BigDecimal?,
+    val comment: String,
+    /** The amount was worked out, not typed. */
+    val inferred: Boolean = false,
+)
 
 /**
  * Where a transaction is in the journal text: lines [firstLine, lastLine] (1-based, inclusive), and
@@ -314,11 +336,11 @@ object Entry {
                         draft.postings.firstOrNull { it.amount.isNotBlank() && it.commodity.isNotBlank() }?.commodity?.trim()
                             .orEmpty()
                     }
-                    out.add(ResolvedPosting(account, commodity, BigDecimal.ZERO, comment))
+                    out.add(ResolvedPosting(account, commodity, BigDecimal.ZERO, comment, inferred = true))
                 }
 
                 check.inferredIndex == i ->
-                    check.inferred.parts.forEach { (c, q) -> out.add(ResolvedPosting(account, c, q, comment)) }
+                    check.inferred.parts.forEach { (c, q) -> out.add(ResolvedPosting(account, c, q, comment, inferred = true)) }
 
                 else -> out.add(ResolvedPosting(account, p.commodity.trim(), null, comment))
             }
@@ -353,8 +375,18 @@ object Entry {
             if (draft.description.isNotEmpty()) append(' ').append(draft.description)
             if (draft.comment.isNotBlank()) append("  ; ").append(draft.comment.trim())
         }
-        val rows = resolve(draft, styles)
-        val amounts = rows.map { p -> p.quantity?.let { amountText(p.commodity, it, styles) } }
+        var rows = resolve(draft, styles)
+        if (!layout.padDecimals) {
+            // A worked-out amount gets as many decimals as the typed ones in its commodity: -4.50, not -4.5.
+            val scales = rows.filter { !it.inferred }.mapNotNull { p -> p.quantity?.let { p.commodity to it.scale() } }
+                .groupBy({ it.first }, { it.second }).mapValues { (_, s) -> s.max() }
+            rows = rows.map { p ->
+                val q = p.quantity
+                val s = scales[p.commodity]
+                if (!p.inferred || q == null || s == null || q.scale() >= s) p else p.copy(quantity = q.setScale(s))
+            }
+        }
+        val amounts = rows.map { p -> p.quantity?.let { amountText(p.commodity, it, styles, layout.padDecimals) } }
         // Aligned: the column where every decimal mark goes, moved right if an account is too long for it.
         // Lines start with a 4-space indent, and at least 2 spaces separate the account from the amount.
         val decimalColumn = if (!layout.aligned) 0 else {
@@ -388,19 +420,23 @@ object Entry {
      * the end of the number): the symbol on the left, the sign and the integer digits, like hledger's
      * amountIntegerWidth. Used to line up decimal marks.
      */
-    internal fun amountText(commodity: String, quantity: BigDecimal, styles: Styles): Pair<String, Int> {
-        val text = formatExact(commodity, quantity, styles)
+    internal fun amountText(commodity: String, quantity: BigDecimal, styles: Styles, pad: Boolean = true): Pair<String, Int> {
+        val text = formatExact(commodity, quantity, styles, pad)
         val st = styles.styleFor(commodity)
-        val number = formatExact("", quantity, Styles(mapOf("" to st)))
+        val number = formatExact("", quantity, Styles(mapOf("" to st)), pad)
         val prefix = if (commodity.isNotEmpty() && st.side == Side.LEFT) text.length - number.length else 0
         val mark = number.indexOf(st.decimalMark)
         return text to prefix + (if (mark >= 0) mark else number.length)
     }
 
-    internal fun formatExact(commodity: String, quantity: BigDecimal, styles: Styles): String {
+    internal fun formatExact(commodity: String, quantity: BigDecimal, styles: Styles, pad: Boolean = true): String {
         val st = styles.styleFor(commodity)
         val scale = quantity.stripTrailingZeros().scale().coerceAtLeast(0)
-        val exact = st.copy(precision = maxOf(st.precision, scale), groupMark = null, groupSizes = emptyList())
+        // Without padding: the decimals the amount has (4.50 stays 4.50, 4 stays 4); a long worked-out one
+        // is cut back to the digits that matter.
+        val precision = if (pad) maxOf(st.precision, scale)
+        else if (quantity.scale() in 0..maxOf(st.precision, scale)) quantity.scale() else scale
+        val exact = st.copy(precision = precision, groupMark = null, groupSizes = emptyList())
         return Styles(mapOf(commodity to exact)).format(commodity, quantity)
     }
 
@@ -638,7 +674,8 @@ object Entry {
      */
     fun editProblems(t: Transaction, source: String?): List<String> {
         val out = LinkedHashSet<String>()
-        if (t.line <= 0 || source == null) out.add("its place in the file isn't known")
+        if (t.file != null) out.add("it's in ${t.file}, an included file, which is only read here (change it there)")
+        else if (t.line <= 0 || source == null) out.add("its place in the file isn't known")
         if (t.code.isNotEmpty()) out.add("a code (${t.code})")
         if (t.date2 != null) out.add("a secondary date")
         if (t.comment.contains('\n')) out.add("a comment on several lines")

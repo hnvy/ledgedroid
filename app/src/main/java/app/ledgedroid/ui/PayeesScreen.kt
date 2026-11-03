@@ -296,6 +296,8 @@ fun PayeeScreen(
     onBack: () -> Unit,
     onOpenTransaction: (Int) -> Unit,
     onRepeat: (Transaction) -> Unit,
+    /** Move this payee's postings from one account to another across the journal. */
+    onRecategorise: () -> Unit = {},
 ) {
     var txns by remember(journal, payee, span) { mutableStateOf<List<Transaction>?>(null) }
     LaunchedEffect(journal, payee, span) {
@@ -305,7 +307,8 @@ fun PayeeScreen(
         LedgerTopBar(
             payee.ifEmpty { "(no payee)" },
             onBack,
-            subtitle = describeSpan(span)
+            subtitle = describeSpan(span),
+            actions = { if (payee.isNotEmpty()) TextButton(onClick = onRecategorise) { Text("Recategorise") } },
         )
     }) { padding ->
         val list = txns

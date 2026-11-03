@@ -3,6 +3,8 @@
 
     <!-- Lets scheduled backup jobs survive a restart (JobInfo.setPersisted) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Reminders for recurring transactions and budget alerts (asked for when turned on) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -33,6 +35,12 @@
                 <action android:name="app.ledgedroid.action.ADD_TRANSACTION" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- Share a bank message, a notification's text or a note to start quick add from it -->
+            <intent-filter android:label="@string/add_transaction">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -53,6 +61,12 @@
         <!-- Scheduled backups of the journal -->
         <service
             android:name=".BackupJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Reminders for recurring transactions and budget alerts -->
+        <service
+            android:name=".AlertsJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

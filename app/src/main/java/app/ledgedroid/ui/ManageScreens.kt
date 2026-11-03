@@ -43,6 +43,7 @@ import app.ledgedroid.core.PeriodPreset
 import app.ledgedroid.core.ReportKind
 import app.ledgedroid.core.Styles
 import app.ledgedroid.core.Template
+import app.ledgedroid.core.Schedule
 import app.ledgedroid.core.describeSpan
 
 /** The list of templates: tap to add a transaction from one, or edit, reorder and delete them. */
@@ -55,8 +56,12 @@ fun TemplatesScreen(
     onEdit: (String?) -> Unit,
     onMove: (String, Int) -> Unit,
     onDelete: (String) -> Unit,
+    /** Set or clear when the template's transaction recurs, for reminders. */
+    onSchedule: (String, Schedule?) -> Unit = { _, _ -> },
 ) {
     var deleting by remember { mutableStateOf<Template?>(null) }
+    var scheduling by remember { mutableStateOf<Template?>(null) }
+    scheduling?.let { t -> ScheduleDialog(t, onSave = { s -> onSchedule(t.id, s); scheduling = null }, onDismiss = { scheduling = null }) }
     Scaffold(
         topBar = { LedgerTopBar("Templates", onBack, subtitle = "For regular transactions") },
         floatingActionButton = {
@@ -86,7 +91,7 @@ fun TemplatesScreen(
             itemsIndexed(templates, key = { _, t -> t.id }) { i, t ->
                 ManageRow(
                     title = t.name,
-                    detail = templateSummary(t, styles),
+                    detail = templateSummary(t, styles) + (t.schedule?.let { "\n" + it.describe() } ?: ""),
                     onClick = { onUse(t) },
                     canMoveUp = i > 0,
                     canMoveDown = i < templates.lastIndex,
@@ -94,6 +99,7 @@ fun TemplatesScreen(
                     menu = listOf(
                         "Add transaction" to { onUse(t) },
                         "Edit" to { onEdit(t.id) },
+                        (if (t.schedule == null) "Remind me…" else "Reminder…") to { scheduling = t },
                         "Delete" to { deleting = t }),
                 )
             }

@@ -168,7 +168,7 @@ object MultiPeriodReports {
 
 
     /** The average per period, at a few more decimal places than usual, rounded later for display. */
-    private fun averageOf(total: MixedAmount, n: Int): MixedAmount {
+    internal fun averageOf(total: MixedAmount, n: Int): MixedAmount {
         if (n == 0) return MixedAmount.ZERO
         val d = java.math.BigDecimal(n)
         return MixedAmount.of(total.parts.mapValues { (_, q) ->

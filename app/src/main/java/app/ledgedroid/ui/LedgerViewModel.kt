@@ -1,5 +1,17 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.Alerts
+import app.ledgedroid.AlertSettings
+import app.ledgedroid.IncludeFolder
+import app.ledgedroid.core.EditPlan
+import app.ledgedroid.core.IncludeResolver
+import app.ledgedroid.core.JournalEdits
+import app.ledgedroid.core.Reconcile
+import app.ledgedroid.core.Schedule
+import app.ledgedroid.core.SharePattern
+import app.ledgedroid.core.SharedEntry
+import app.ledgedroid.core.ShareParse
+import app.ledgedroid.core.Valuation
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -296,7 +308,19 @@ sealed interface Screen {
     data class Add(val editTemplateId: String? = null, val editing: TransactionLocation? = null) : Screen
 
     /** Adding a transaction one prompt at a time (Settings › Quick add), starting with templateId if set. */
-    data class QuickAdd(val templateId: String? = null) : Screen
+    data class QuickAdd(val templateId: String? = null, val shared: SharedEntry? = null) : Screen
+
+    /** Reconciling an account against a statement. */
+    data class Reconcile(val account: String, val subaccounts: Boolean) : Screen
+
+    /** Journal health, like hledger check. */
+    data object Health : Screen
+
+    /** Net worth and spending charts. */
+    data object Charts : Screen
+
+    /** The patterns for reading shared text. */
+    data object SharePatterns : Screen
 }
 
 /** A message shown at the bottom of the screen, with an Undo button if the change can be undone. */
@@ -839,7 +863,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Where [t] is in the journal text it was read from, or null if that isn't known. */
-    fun locate(t: Transaction): TransactionLocation? = lastRead?.second?.let { Entry.locate(it, t) }
+    fun locate(t: Transaction): TransactionLocation? =
+        if (t.file != null || t.forecast) null else lastRead?.second?.let { Entry.locate(it, t) }
 
     /** Open the form to change [t] in the journal. */
     fun startEdit(t: Transaction) {
@@ -1041,12 +1066,16 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** How the form spaces amounts after account names. Remembered between launches. */
+    /**
+     * How the form writes amounts: spaced or aligned after account names (aligned unless changed), and
+     * whether whole amounts get .00. Remembered between launches.
+     */
     private val _amountLayout = MutableStateFlow(
         AmountLayout(
-            aligned = prefs.getBoolean(KEY_ALIGN_AMOUNTS, false),
+            aligned = prefs.getBoolean(KEY_ALIGN_AMOUNTS, AmountLayout.APP_DEFAULT.aligned),
             spaces = prefs.getInt(KEY_AMOUNT_SPACES, AmountLayout.DEFAULT_SPACES),
             column = prefs.getInt(KEY_AMOUNT_COLUMN, AmountLayout.DEFAULT_COLUMN),
+            padDecimals = prefs.getBoolean(KEY_PAD_DECIMALS, true),
         )
     )
     val amountLayout: StateFlow<AmountLayout> = _amountLayout.asStateFlow()
@@ -1061,7 +1090,17 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             .putBoolean(KEY_ALIGN_AMOUNTS, l.aligned)
             .putInt(KEY_AMOUNT_SPACES, l.spaces)
             .putInt(KEY_AMOUNT_COLUMN, l.column)
+            .putBoolean(KEY_PAD_DECIMALS, l.padDecimals)
             .apply()
+    }
+
+    /** Quick add puts each prompt's default in the box as text to edit, like the form, not as a hint. */
+    private val _quickAddFill = MutableStateFlow(prefs.getBoolean(KEY_QUICK_ADD_FILL, false))
+    val quickAddFill: StateFlow<Boolean> = _quickAddFill.asStateFlow()
+
+    fun setQuickAddFill(on: Boolean) {
+        _quickAddFill.value = on
+        prefs.edit().putBoolean(KEY_QUICK_ADD_FILL, on).apply()
     }
 
     /** Optional fields the person has hidden in the form. Remembered between launches. */
@@ -1245,6 +1284,181 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         AddWidget.updateAll(getApplication())
     }
 
+    // ------------------------------------------------------------------ included files
+
+    /** The folder include directives are read from (Settings › Included files), or null. */
+    private val _includeFolder = MutableStateFlow(IncludeFolder.chosen(app)?.toString())
+    val includeFolder: StateFlow<String?> = _includeFolder.asStateFlow()
+
+    /** Read included files from [tree] (or stop with null), then read the journal again. */
+    fun setIncludeFolder(tree: Uri?) {
+        IncludeFolder.choose(getApplication(), tree)
+        _includeFolder.value = tree?.toString()
+        load(source)
+    }
+
+    private fun includeResolver(src: Source): IncludeResolver? =
+        (src as? Source.File)?.let { IncludeFolder.resolver(getApplication(), it.uri) }
+
+    // ------------------------------------------------------------------ changes across the journal
+
+    /** A change to preview: the lines it changes, and what else to do once it's made. */
+    class PendingEdit(val plan: EditPlan, val message: String, val after: () -> Unit = {})
+
+    private val _pendingEdit = MutableStateFlow<PendingEdit?>(null)
+    val pendingEdit: StateFlow<PendingEdit?> = _pendingEdit.asStateFlow()
+
+    private fun preview(make: (String, Journal) -> EditPlan, message: String, after: () -> Unit = {}) {
+        val text = lastRead?.second ?: return
+        val journal = (_load.value as? LoadState.Loaded)?.journal ?: return
+        _pendingEdit.value = runCatching { PendingEdit(make(text, journal), message, after) }
+            .getOrElse { e -> _message.value = e.message; null }
+    }
+
+    /** Rename [from] (and its subaccounts) to [to] across the journal, shown first; pins, hiding and types follow. */
+    fun previewRename(from: String, to: String) {
+        val target = to.trim()
+        if (target.isEmpty() || target == from) return
+        preview({ text, j -> JournalEdits.renameAccount(text, j, from, target) }, "Renamed $from to $target") {
+            fun moved(a: String) = if (a == from || a.startsWith("$from:")) target + a.removePrefix(from) else a
+            setPinned(_pinned.value.map(::moved).distinct())
+            val h = _hidden.value
+            setHidden(h.copy(listed = h.listed.map(::moved).toSet(), paused = h.paused.map(::moved).toSet()))
+            val types = _accountTypes.value.mapKeys { (k, _) -> moved(k) }
+            if (types != _accountTypes.value) {
+                _accountTypes.value = types
+                Store.writeAccountTypes(prefs, types)
+            }
+        }
+    }
+
+    /** Move [payee]'s postings to [from] to [to], shown first. */
+    fun previewRecategorise(payee: String, from: String, to: String) {
+        val target = to.trim()
+        if (target.isEmpty() || target == from) return
+        preview({ text, j -> JournalEdits.recategorise(text, j, payee, from, target) }, "Moved $payee's $from postings to $target")
+    }
+
+    /** Declare [accounts] and [payees] (from Journal health), shown first. */
+    fun previewDeclare(accounts: List<String>, payees: List<String>) =
+        preview({ text, _ -> JournalEdits.declare(text, accounts, payees) },
+            listOfNotNull(accounts.size.takeIf { it > 0 }?.let { "Declared $it account${if (it == 1) "" else "s"}" },
+                payees.size.takeIf { it > 0 }?.let { "declared $it payee${if (it == 1) "" else "s"}" }).joinToString(" and "))
+
+    fun cancelEdit() {
+        _pendingEdit.value = null
+    }
+
+    /** Make the previewed change, with Undo. */
+    fun applyEdit() {
+        val pending = _pendingEdit.value ?: return
+        _pendingEdit.value = null
+        if (pending.plan.isEmpty) return
+        val src = source
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { rewrite(src, pending.message.lowercase()) { pending.plan.apply(it) } } }
+            result.onSuccess { w ->
+                pending.after()
+                val n = pending.plan.changes.size
+                changed(src, w.undo, "${pending.message} (${if (n == 1) "1 line" else "$n lines"})")
+                applyWritten(src, w.text)
+            }.onFailure { e -> _message.value = failureMessage(e, "make the change") }
+        }
+    }
+
+    // ------------------------------------------------------------------ reconciling
+
+    /** Reconcile [account] against a statement. */
+    fun openReconcile(account: String, subaccounts: Boolean) = push(Screen.Reconcile(account, subaccounts))
+
+    /**
+     * Save a reconciliation: clear the ticked postings, unmark the unticked ones, and with [assertion]
+     * add a balance assertion of [statement] to the last cleared posting. One change, with Undo.
+     */
+    fun saveReconcile(r: Reconcile, ticked: Set<Int>, statement: java.math.BigDecimal?, assertion: Boolean) {
+        val styles = (_load.value as? LoadState.Loaded)?.journal?.styles ?: return
+        val (clear, unclear) = r.changes(ticked)
+        val target = if (assertion && statement != null) r.assertionTarget(ticked) else null
+        if (clear.isEmpty() && unclear.isEmpty() && target == null) {
+            back(); return
+        }
+        val src = source
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    rewrite(src, "reconciled ${r.account}") { text ->
+                        var t = JournalEdits.setPostingStatus(text, clear, Status.CLEARED, "clear").apply(text)
+                        t = JournalEdits.setPostingStatus(t, unclear, Status.UNMARKED, "unclear").apply(t)
+                        if (target != null) t = JournalEdits.addAssertion(t, target.posting.line, r.commodity, statement!!, styles).apply(t)
+                        t
+                    }
+                }
+            }
+            result.onSuccess { w ->
+                back()
+                val parts = listOfNotNull(
+                    clear.size.takeIf { it > 0 }?.let { "$it cleared" },
+                    unclear.size.takeIf { it > 0 }?.let { "$it unmarked" },
+                    target?.let { "balance assertion added" },
+                )
+                changed(src, w.undo, "Reconciled ${r.account}: ${parts.joinToString(", ")}")
+                applyWritten(src, w.text)
+            }.onFailure { e -> _message.value = failureMessage(e, "save the reconciliation") }
+        }
+    }
+
+    // ------------------------------------------------------------------ reminders, budget alerts
+
+    /** When [id]'s transaction recurs, for reminders; null stops them. */
+    fun setTemplateSchedule(id: String, schedule: Schedule?) {
+        setTemplates(_templates.value.map { if (it.id == id) it.copy(schedule = schedule) else it })
+        if (schedule != null && !_alertSettings.value.reminders) setAlertSettings(_alertSettings.value.copy(reminders = true))
+    }
+
+    private val _alertSettings = MutableStateFlow(Alerts.settings(app))
+    val alertSettings: StateFlow<AlertSettings> = _alertSettings.asStateFlow()
+
+    fun setAlertSettings(s: AlertSettings) {
+        _alertSettings.value = s
+        Alerts.setSettings(getApplication(), s)
+        checkAlerts()
+    }
+
+    /** Tell about anything due or over budget now (also done in the background). */
+    fun checkAlerts() {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Alerts.check(getApplication()) } }
+    }
+
+    init {
+        // Each time the app opens, as well as in the background.
+        checkAlerts()
+    }
+
+    // ------------------------------------------------------------------ sharing into quick add
+
+    private val _sharePatterns = MutableStateFlow(Store.readSharePatterns(prefs))
+    val sharePatterns: StateFlow<List<SharePattern>> = _sharePatterns.asStateFlow()
+
+    fun setSharePatterns(patterns: List<SharePattern>) {
+        _sharePatterns.value = patterns
+        Store.writeSharePatterns(prefs, patterns)
+    }
+
+    /** Read shared text, as quick add would. */
+    fun readShared(text: String, patterns: List<SharePattern> = _sharePatterns.value): SharedEntry =
+        ShareParse.parse(text, patterns, LocalDate.now(), (_load.value as? LoadState.Loaded)?.journal?.styles?.commodities().orEmpty())
+
+    /** Start quick add from shared text: what was picked out becomes its defaults. */
+    fun startShared(text: String) {
+        if (source is Source.None) {
+            _message.value = NO_JOURNAL
+            return
+        }
+        val shared = readShared(text)
+        _draft.value = blankDraft()
+        openForm(Screen.QuickAdd(shared.templateId?.takeIf { id -> _templates.value.any { it.id == id } }, shared))
+    }
+
     /**
      * Add the transaction to the end of the journal file, after checking it reads back as entered.
      * Only the new lines are written, so the rest of the file stays byte for byte as it was. Returns
@@ -1411,7 +1625,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun parse(name: String, text: String, src: Source, auto: Boolean): LoadState {
         return try {
-            LoadState.Loaded(JournalParser(auto = auto).parse(text).copy(assignedTypes = _accountTypes.value), name, src)
+            LoadState.Loaded(JournalParser(auto = auto).parse(text, includeResolver(src)).copy(assignedTypes = _accountTypes.value), name, src)
         } catch (e: JournalException) {
             LoadState.Failed(name, e.message ?: "Couldn't read this journal.", e.line, e.excerpt)
         } catch (e: OutOfMemoryError) {
@@ -1478,26 +1692,31 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         val error = command.error ?: queryError ?: forecastNote
         // --drop shortens names in list mode, like hledger.
         val drop = command.drop?.takeIf { it > 0 && opts.mode == AccountListMode.FLAT }
-        val base = ReportUi(j, ropts.span, ropts.accumulation, null, null, error, options = opts, command = command)
+        // -V / -X: market values from the journal's P prices, on each column's last day (or the report's end).
+        val valuer = command.value?.let { Valuation(j.prices, it) }
+        val valueNote = if (valuer != null && !valuer.hasPrices) "${command.value?.describe()}: this journal has no P prices, so amounts are shown as they are" else null
+        val at = Valuation.reportDate(j, ropts.span, today)
+        val base = ReportUi(j, ropts.span, ropts.accumulation, null, null, error ?: valueNote, options = opts, command = command)
         if (opts.multiPeriod && opts.kind != ReportKind.BUDGET) {
-            val multi = if (opts.kind == ReportKind.BALANCE) MultiPeriodReports.balance(j, query, ropts, opts.interval) else null
+            val multi = if (opts.kind == ReportKind.BALANCE) MultiPeriodReports.balance(j, query, ropts, opts.interval)
+                .let { valuer?.multiPeriod(it) ?: it } else null
             val compound = if (opts.kind == ReportKind.BALANCE) null
-            else MultiPeriodReports.compound(j, query, ropts, opts.interval, opts.kind)
+            else MultiPeriodReports.compound(j, query, ropts, opts.interval, opts.kind).let { valuer?.multiCompound(it) ?: it }
             return base.copy(
                 multi = (drop?.let { multi?.dropNames(it) } ?: multi)?.withoutHiddenRows(rowsHidden),
                 multiCompound = (drop?.let { compound?.dropNames(it) } ?: compound)?.withoutHiddenRows(rowsHidden),
             )
         }
         return when (opts.kind) {
-            ReportKind.BALANCE -> Reports.balance(j, query, ropts).let { r ->
+            ReportKind.BALANCE -> Reports.balance(j, query, ropts).let { valuer?.balance(it, at) ?: it }.let { r ->
                 base.copy(single = (drop?.let { r.dropNames(it) } ?: r).withoutHiddenRows(rowsHidden))
             }
 
-            ReportKind.BUDGET -> Budgets.report(j, query, opts.budgetOptions(today, command.budgetPattern)).let { r ->
+            ReportKind.BUDGET -> Budgets.report(j, query, opts.budgetOptions(today, command.budgetPattern)).let { valuer?.budget(it) ?: it }.let { r ->
                 base.copy(budget = (drop?.let { r.dropNames(it) } ?: r).withoutHiddenRows(rowsHidden))
             }
 
-            else -> Reports.compound(j, query, ropts, opts.kind).let { r ->
+            else -> Reports.compound(j, query, ropts, opts.kind).let { valuer?.compound(it, at) ?: it }.let { r ->
                 base.copy(compound = (drop?.let { r.dropNames(it) } ?: r).withoutHiddenRows(rowsHidden))
             }
         }
@@ -1547,7 +1766,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             sign = sign,
             amountSign = target.amountSign,
             filter = target.filter,
-        )
+        ).let { r -> command.value?.let { Valuation(j.prices, it).register(r, Valuation.reportDate(j, ropts.span, today)) } ?: r }
         val choices = SignChoices.forAccount(j.accountType(target.account), sign * (if (ropts.invert) -1 else 1))
         return RegisterUi(target, j, ropts.span, ropts.accumulation, report, choices)
     }
@@ -1612,6 +1831,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val KEY_URI = "journalUri"
         private const val KEY_QUICK_ADD = "quickAdd"
+        private const val KEY_QUICK_ADD_FILL = "quickAddFill"
+        private const val KEY_PAD_DECIMALS = "padDecimals"
         private const val KEY_QUICK_ADD_DEFAULT = "quickAddDefault"
         private const val KEY_ALIGN_AMOUNTS = "alignAmounts"
         private const val KEY_AMOUNT_SPACES = "amountSpaces"

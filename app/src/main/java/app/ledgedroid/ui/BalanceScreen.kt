@@ -140,6 +140,8 @@ fun BalanceScreen(
     onApplyView: (SavedView) -> Unit,
     onSaveView: (String) -> Unit,
     onAdd: () -> Unit,
+    /** Rename an account across the journal (from its long-press menu). */
+    onRename: (String) -> Unit,
     onQuickAdd: () -> Unit,
     /** Show the smaller button above + (Settings › Quick add button). */
     quickAddButton: Boolean,
@@ -272,6 +274,14 @@ fun BalanceScreen(
                             DropdownMenuItem(
                                 text = { Text("Saved reports") },
                                 onClick = { menuOpen = false; onOpen(Screen.SavedViews) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Charts") },
+                                onClick = { menuOpen = false; onOpen(Screen.Charts) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Journal health") },
+                                onClick = { menuOpen = false; onOpen(Screen.Health) },
                             )
                             DropdownMenuItem(
                                 text = { Text("Save this report…") },
@@ -433,6 +443,7 @@ fun BalanceScreen(
                 branchHues[top]?.let { hueColor(it, LocalLedgerColors.current.dark, treeStyle.contrast) }
             },
             onColor = { editingColor = BranchColors.topLevel(account); actionsFor = null },
+            onRename = if (account == UNBUDGETED || account.startsWith("$UNBUDGETED:")) null else ({ actionsFor = null; onRename(account) }),
         )
     }
     editingColor?.let { name ->
