@@ -23,6 +23,7 @@
 by Simon et al. If Ledgedroid is useful to you, please consider
 [sponsoring hledger](https://hledger.org/sponsor.html).
 - The app icon was drawn using the beautiful [Aseprite](https://www.aseprite.org/). Buy it and you won't regret it!
+  - It's supposed to be an "L" that is being mined...
 - **In addition to GPL 3.0, finances generated from this project and its forks MUST go to hledger.**
 
 ## Is this... AI?
