@@ -49,7 +49,7 @@ pressure, but frankly the time lost reconciling was too much.
 
 So anyway, with a bit of sample code / logic, I managed to get this.
 
-I've been using it for some time and honestly it's a joy.
+I've been using it for some time and honestly... it's a joy.
 
 Naturally, it's under the GPL 3.0 (+ finances must go to
 hledger). Other than that, do what you want with it.
