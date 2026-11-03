@@ -126,7 +126,10 @@ backup before each change (on by default), skip if unchanged, how many
 to keep, and **Back up now**. Restore by copying a `.bak` file over the
 journal.
 
-## Journal support Supported: periodic rules (`~`) and auto posting
+## Journal support
+
+Supported: `include`; market prices and
+valuation (`-V`, `-X`); periodic rules (`~`) and auto posting
 rules (`=`, with `*N` and `%account`, applied in order as in hledger);
 transaction status, codes, secondary dates and comments; one inferred
 amount per transaction, `@`/`@@` costs, `= == =* ==*` assertions and
@@ -136,8 +139,7 @@ decimal mark, digit groups, left/right and quoted commodity symbols;
 `decimal-mark`, `D`, `Y`/`year`, `alias`, `apply account` and
 `comment` directives. Comment lines under a posting belong to it.
 
-Not supported: `include` (skipped with a note), market prices and
-valuation (`-V`, `-X`), lots, timeclock and timedot. Query terms:
+Not supported: lots, timeclock and timedot. Query terms:
 account patterns, `acct:`, `desc:`, `payee:`, `cur:`, `status:`,
 `date:`, `amt:`, `tag:`, `depth:`, `not:` (not `date2:`, `code:`,
 `real:`, `expr:` and the like).
