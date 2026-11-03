@@ -100,6 +100,13 @@ Harvey R., MD
   </tr>
 </table>
 
+<table align="center">
+  <tr>
+    <td align="center" width="50%"><img src="./screenshots/IncomeStatement.png"><br><sub>Income statement</sub></td>
+    <td align="center" width="50%"><img src="./screenshots/Trends.png"><br><sub>Balance trend (by quarter)</sub></td>
+  </tr>
+</table>
+
 ## Comparison to other hledger apps
 
 Ledgedroid has a lot of features. Its biggest downside is that it is sadly written
