@@ -36,6 +36,8 @@ by Simon et al. If Ledgedroid is useful to you, please consider
   home screen **widget** and a **quick settings tile**
 - Customisable **colours** for each account and its subaccounts
 - Pin and hide accounts
+- Keep your journal healthy with a **Check**
+- **Rename** and **Recategorise** accounts, payees, and transactions rapidly
 
 ## How to use it
 
