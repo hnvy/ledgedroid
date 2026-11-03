@@ -60,9 +60,10 @@ Will it save you time when adding transactions on-the-go whilst making
 sure your balances are still not atrociously incorrect? Absolutely
 yes*.
 
-Any issues, please feel free to flag.
-
-
+Any issues, please feel free to report.
+<br>
+<br>
+<br>
 Best wishes,
 
 Harvey R., MD
