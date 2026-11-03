@@ -77,6 +77,23 @@ Any issues, please feel free to flag.
 - **Rename** and **Recategorise** accounts, payees, and transactions rapidly
 - Share text/SMS/notifications (eg from bank) and match transactions using RegEx patterns
 
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="./screenshots/Landing.png"><br><sub>Landing page</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/Account.png"><br><sub>Clicking on an account</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/Account_options.png"><br><sub>Account options</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/Filter_options.png"><br><sub>Filter options</sub></td>
+  </tr>
+</table>
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%"><img src="./screenshots/Settings.png"><br><sub>Settings page</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/Add.png"><br><sub>Add transaction form</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/QuickAdd.png"><br><sub>hledger-like Quick add</sub></td>
+  </tr>
+</table>
+
 ## Comparison to other hledger apps
 
 Ledgedroid has a lot of features. Its biggest downside is that it is sadly written
