@@ -1,5 +1,8 @@
 package app.ledgedroid.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Edit
+import app.ledgedroid.core.QuickAnswer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +77,9 @@ import app.ledgedroid.core.Template
 import app.ledgedroid.core.TransactionDraft
 import java.time.LocalDate
 
+/** Changing an earlier answer in quick add: how it all was, the answers after it, and which is being changed. */
+private data class Editing(val before: QuickAddState, val later: List<QuickAnswer>, val label: String)
+
 /**
  * Quick add: a transaction one prompt at a time, like hledger add. The answers so far are listed at the top,
  * and the prompt sits just above the keyboard with its suggestions right above it, so they're never hidden.
@@ -119,6 +125,8 @@ fun QuickAddScreen(
     var stem: String by remember { mutableStateOf(startText(state)) }
     var cycle: Int by remember { mutableIntStateOf(-1) }
     var problem: String? by remember { mutableStateOf<String?>(null) }
+    // Changing an earlier answer: how it all was (to cancel), and the answers after it, to put back.
+    var editing: Editing? by remember { mutableStateOf<Editing?>(null) }
     val completions: List<QuickCompletion> = remember(state, stem) { engine.completions(state, stem) }
     val prompt: QuickPrompt = engine.prompt(state)
     val focus = remember { FocusRequester() }
@@ -151,18 +159,62 @@ fun QuickAddScreen(
         setText(completions[i].value)
     }
 
+    /** Show [a] in the box at [s]'s prompt, as the answer being changed, its suggestion picked again. */
+    fun showAnswer(s: QuickAddState, a: QuickAnswer) {
+        state = s
+        val text = a.text.ifEmpty { startText(s) }
+        stem = text
+        cycle = a.chosen?.let { c -> engine.completions(s, text).indexOf(c) } ?: -1
+        setText(text)
+    }
+
+    /**
+     * Tap an answer above to change it: back to its prompt with what was given, the later answers kept to
+     * put back once it's changed. While changing one, tapping another starts again from how it all was.
+     */
+    fun change(logIndex: Int) {
+        if (saving) return
+        val base = editing?.before ?: state
+        val r = engine.rewind(base, logIndex) ?: return
+        editing = Editing(before = base, later = r.later, label = base.log[logIndex].first)
+        problem = null
+        showAnswer(r.state, r.answer)
+    }
+
     fun answer() {
         if (saving) return
         when (val r = engine.submit(state, field.text, completions.getOrNull(cycle))) {
-            is QuickResult.Next -> go(r.state)
+            is QuickResult.Next -> {
+                val e = editing
+                if (e == null) go(r.state)
+                else {
+                    // Put the later answers back; stop at one that no longer fits, to change that too.
+                    val back = engine.replay(r.state, e.later)
+                    go(back.state)
+                    val stopped = back.stopped
+                    if (stopped == null) editing = null
+                    else {
+                        editing = e.copy(later = back.later, label = engine.prompt(back.state).label)
+                        showAnswer(back.state, stopped)
+                        problem = back.problem
+                    }
+                }
+            }
             is QuickResult.Problem -> problem = r.message
             is QuickResult.Done -> onSave(r.draft, false)
         }
     }
 
     val back = {
-        val previous = engine.back(state)
-        if (previous != null) go(previous) else onClose()
+        val e = editing
+        if (e != null) {
+            // Cancel the change: everything as it was.
+            editing = null
+            go(e.before)
+        } else {
+            val previous = engine.back(state)
+            if (previous != null) go(previous) else onClose()
+        }
     }
     BackHandler(onBack = back)
 
@@ -207,16 +259,43 @@ fun QuickAddScreen(
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 }
-                itemsIndexed(state.log) { _, line: Pair<String, String> ->
+                // The answers so far: tap one to change it.
+                itemsIndexed(state.log) { i, line: Pair<String, String> ->
                     val (label, value) = line
-                    Row {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !saving, onClickLabel = "Change $label") { change(i) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
                             label,
                             style = MaterialTheme.typography.bodyMedium,
                             color = lc.mutedInk,
                             modifier = Modifier.width(96.dp),
                         )
-                        Text(value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            value,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = lc.mutedInk, modifier = Modifier.size(16.dp))
+                    }
+                }
+                editing?.let { e ->
+                    item {
+                        Text(
+                            "Changing ${e.label}. " + when (val n = e.later.size) {
+                                0 -> "Enter keeps the change."
+                                1 -> "Enter puts your 1 later answer back."
+                                else -> "Enter puts your $n later answers back."
+                            } + " Cancel edit leaves it all as it was.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
                     }
                 }
                 if (state.step == QuickStep.Confirm) {
@@ -320,7 +399,7 @@ fun QuickAddScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedButton(onClick = back, enabled = !saving) {
-                            Text(if (state.previous == null) "Cancel" else "Back")
+                            Text(if (editing != null) "Cancel edit" else if (state.previous == null) "Cancel" else "Back")
                         }
                         Spacer(Modifier.weight(1f))
                         if (state.step == QuickStep.Confirm) {

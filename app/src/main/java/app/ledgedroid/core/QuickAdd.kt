@@ -40,6 +40,8 @@ data class QuickAddState(
     val log: List<Pair<String, String>> = emptyList(),
     val previous: QuickAddState? = null,
     val hints: QuickHints = QuickHints(),
+    /** The answer given at [previous]'s prompt that led here, as typed, to put back after an edit. */
+    val input: QuickAnswer? = null,
 ) {
     /** The postings answered so far. */
     val entered: Int
@@ -50,6 +52,26 @@ data class QuickAddState(
             else -> 0
         }
 }
+
+/** An answer as given: the text typed (empty for the default) and the suggestion picked, if one was. */
+data class QuickAnswer(val text: String, val chosen: QuickCompletion? = null)
+
+/**
+ * Going back to an earlier answer to change it: [state] is that answer's prompt, [answer] what was given
+ * there, and [later] the answers after it, to put back once it's changed (see [QuickAdd.replay]).
+ */
+data class QuickRewind(val state: QuickAddState, val answer: QuickAnswer, val later: List<QuickAnswer>)
+
+/**
+ * The later answers put back after an edit: [state] where it got to. If one no longer fits, [stopped] is
+ * it (its prompt is [state]'s), with the [problem] and the answers after it in [later].
+ */
+data class QuickReplay(
+    val state: QuickAddState,
+    val stopped: QuickAnswer? = null,
+    val problem: String? = null,
+    val later: List<QuickAnswer> = emptyList(),
+)
 
 sealed interface QuickResult {
     data class Next(val state: QuickAddState) : QuickResult
@@ -135,7 +157,42 @@ class QuickAdd(
     }
 
     /** Answer the current prompt with [text], or with [chosen] if that's the suggestion picked. */
-    fun submit(s: QuickAddState, text: String, chosen: QuickCompletion? = null): QuickResult {
+    fun submit(s: QuickAddState, text: String, chosen: QuickCompletion? = null): QuickResult =
+        when (val r = answer(s, text, chosen)) {
+            is QuickResult.Next -> QuickResult.Next(r.state.copy(input = QuickAnswer(text, chosen)))
+            else -> r
+        }
+
+    /**
+     * Go back to the answer shown as line [logIndex] of [s]'s answers, to change it: its prompt, what was
+     * given, and the answers after it. Null if there's no such line.
+     */
+    fun rewind(s: QuickAddState, logIndex: Int): QuickRewind? {
+        // The states, newest first; an answer is the step from a state's previous to it that added a line.
+        val chain = generateSequence(s) { it.previous }.toList()
+        val answered = chain.filter { it.previous != null && it.input != null }.asReversed() // oldest first
+        val lineStep = answered.firstOrNull { st -> st.log.size == logIndex + 1 && st.previous!!.log.size == logIndex }
+            ?: return null
+        val later = answered.dropWhile { it !== lineStep }.drop(1).map { it.input!! }
+        return QuickRewind(lineStep.previous!!, lineStep.input!!, later)
+    }
+
+    /** Put [answers] back, one after another, from [s], stopping at the first that no longer fits. */
+    fun replay(s: QuickAddState, answers: List<QuickAnswer>): QuickReplay {
+        var state = s
+        for ((i, a) in answers.withIndex()) {
+            // A suggestion picked before may not be on offer now (eg after another template): use its text.
+            val chosen = a.chosen?.takeIf { c -> completions(state, a.text, 50).any { it == c } }
+            when (val r = submit(state, a.text, chosen)) {
+                is QuickResult.Next -> state = r.state
+                is QuickResult.Problem -> return QuickReplay(state, a, r.message, answers.drop(i + 1))
+                is QuickResult.Done -> return QuickReplay(state)
+            }
+        }
+        return QuickReplay(state)
+    }
+
+    private fun answer(s: QuickAddState, text: String, chosen: QuickCompletion?): QuickResult {
         val answer = text.trim()
         val p = prompt(s)
         val given = answer.ifEmpty { p.default.orEmpty() }
