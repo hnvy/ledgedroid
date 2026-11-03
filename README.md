@@ -79,7 +79,8 @@ Any issues, please feel free to flag.
 
 ## Comparison to other hledger apps
 
-Ledgedroid has a lot of features. Its biggest downside is that it is sadly written by AI. I can't say that I'm 'proud' of it, but it has certainly helped me.
+Ledgedroid has a lot of features. Its biggest downside is that it is sadly written
+by AI. I can't say that I'm 'proud' of it, but it has certainly helped me.
 
 | | **Ledgedroid** | **NanoLedger** | **MoLe** |
 |---|---|---|---|
