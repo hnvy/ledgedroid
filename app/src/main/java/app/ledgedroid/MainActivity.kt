@@ -1,5 +1,7 @@
 package app.ledgedroid
 
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import app.ledgedroid.ui.AccountNameDialog
@@ -108,7 +110,6 @@ fun LedgerApp(vm: LedgerViewModel) {
     val savedViews by vm.savedViews.collectAsStateWithLifecycle()
     val templates by vm.templates.collectAsStateWithLifecycle()
     val queryRevision by vm.queryRevision.collectAsStateWithLifecycle()
-    val message by vm.message.collectAsStateWithLifecycle()
     val hidden by vm.hidden.collectAsStateWithLifecycle()
     val hideZeroPins by vm.hideZeroPins.collectAsStateWithLifecycle()
     val quickAdd by vm.quickAdd.collectAsStateWithLifecycle()
@@ -131,7 +132,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val chooseIncludeFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.setIncludeFolder(uri)
     }
-    // Turning on reminders or budget alerts asks for notifications first (Android 13 and later).
+    // Turning on reminders asks for notifications first (Android 13 and later).
     val context = androidx.compose.ui.platform.LocalContext.current
     var notificationsAllowed by remember { mutableStateOf(Alerts.allowed(context)) }
     var pendingAlerts by remember { mutableStateOf<AlertSettings?>(null) }
@@ -157,16 +158,20 @@ fun LedgerApp(vm: LedgerViewModel) {
 
     // Messages show over every screen, so Undo is offered wherever the change was made.
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(message?.id) {
-        val m = message ?: return@LaunchedEffect
-        vm.consumeMessage()
-        val result = snackbar.showSnackbar(
-            m.text,
-            actionLabel = if (m.canUndo) "Undo" else null,
-            withDismissAction = true,
-            duration = if (m.canUndo) SnackbarDuration.Long else SnackbarDuration.Short,
-        )
-        if (result == SnackbarResult.ActionPerformed) vm.undo()
+    // Each message is an event: taking it (consumeMessage) mustn't cancel its own snackbar, as keying an
+    // effect on the message did, which could take a snackbar, and its Undo, away straight after showing it.
+    // Only a newer message replaces the one showing.
+    LaunchedEffect(Unit) {
+        vm.message.filterNotNull().collectLatest { m ->
+            vm.consumeMessage()
+            val result = snackbar.showSnackbar(
+                m.text,
+                actionLabel = if (m.canUndo) "Undo" else null,
+                withDismissAction = true,
+                duration = if (m.canUndo) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.undo()
+        }
     }
 
     val loaded = load as? LoadState.Loaded

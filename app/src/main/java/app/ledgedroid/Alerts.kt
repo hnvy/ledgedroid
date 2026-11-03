@@ -14,7 +14,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import app.ledgedroid.core.BudgetAlerts
 import app.ledgedroid.core.JournalParser
 import app.ledgedroid.core.Reminders
 import app.ledgedroid.ui.Store
@@ -25,35 +24,28 @@ import kotlin.concurrent.thread
 /** What the person wants to be told about (Settings › Notifications). */
 data class AlertSettings(
     val reminders: Boolean = false,
-    val budget: Boolean = false,
-    /** Tell when spending reaches this percent of a budget (100: only once it's over). */
-    val budgetWarnAt: Int = 100,
 ) {
-    val any: Boolean get() = reminders || budget
+    val any: Boolean get() = reminders
 }
 
 /**
- * Reminders for recurring transactions (templates with a schedule) and budget alerts, as notifications.
- * Checked about four times a day in the background and whenever the app opens; each due date and each
- * budget level is told about once.
+ * Reminders for recurring transactions (templates with a schedule), as notifications. Checked about four
+ * times a day in the background and whenever the app opens; each due date is told about once.
  */
 object Alerts {
     private const val PREFS = "ledgedroid"
     private const val CHANNEL_REMINDERS = "reminders"
-    private const val CHANNEL_BUDGET = "budget"
     private const val JOB_ID = 4202
     private const val KEY_SETTINGS = "alertSettings"
     private const val KEY_REMINDED = "remindedDue"
-    private const val KEY_BUDGET_TOLD = "budgetTold"
 
     fun settings(context: Context): AlertSettings {
         val o = prefs(context).getString(KEY_SETTINGS, null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return AlertSettings()
-        return AlertSettings(o.optBoolean("reminders"), o.optBoolean("budget"), o.optInt("warnAt", 100).coerceIn(50, 100))
+        return AlertSettings(o.optBoolean("reminders"))
     }
 
     fun setSettings(context: Context, s: AlertSettings) {
-        prefs(context).edit().putString(KEY_SETTINGS, JSONObject().put("reminders", s.reminders).put("budget", s.budget)
-            .put("warnAt", s.budgetWarnAt).toString()).apply()
+        prefs(context).edit().putString(KEY_SETTINGS, JSONObject().put("reminders", s.reminders).toString()).apply()
         schedule(context, s)
     }
 
@@ -75,7 +67,7 @@ object Alerts {
         )
     }
 
-    /** Read the journal and tell about anything due or over budget. Returns how many notifications were posted. */
+    /** Read the journal and templates and tell about anything due. Returns how many notifications were posted. */
     fun check(context: Context, today: LocalDate = LocalDate.now()): Int {
         val s = settings(context)
         if (!s.any || !allowed(context)) return 0
@@ -102,25 +94,6 @@ object Alerts {
             }
             p.edit().putString(KEY_REMINDED, writeDates(reminded)).apply()
         }
-        if (s.budget && journal != null) {
-            val month = today.withDayOfMonth(1).toString()
-            val told = p.getString(KEY_BUDGET_TOLD, null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
-            if (told.optString("month") != month) told.keys().asSequence().toList().forEach { told.remove(it) }
-            told.put("month", month)
-            for (a in BudgetAlerts.check(journal, today, s.budgetWarnAt)) {
-                // Once at the warning level and once more when it's over.
-                val level = if (a.over) "over" else "near"
-                if (told.optString(a.account) == level || (told.optString(a.account) == "over")) continue
-                val st = journal.styles
-                notify(context, CHANNEL_BUDGET, ("b:" + a.account).hashCode(),
-                    if (a.over) "Over budget: ${a.account}" else "${a.percent}% of budget: ${a.account}",
-                    "${st.format(a.commodity, a.actual)} of ${st.format(a.commodity, a.goal)} this month",
-                    context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent(context, MainActivity::class.java))
-                told.put(a.account, level)
-                posted++
-            }
-            p.edit().putString(KEY_BUDGET_TOLD, told.toString()).apply()
-        }
         return posted
     }
 
@@ -140,10 +113,10 @@ object Alerts {
 
     private fun channels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
+        // Budget alerts were taken out: their channel goes too, so it doesn't linger in Android's settings.
+        runCatching { nm.deleteNotificationChannel("budget") }
         nm.createNotificationChannel(NotificationChannel(CHANNEL_REMINDERS, "Reminders", NotificationManager.IMPORTANCE_DEFAULT)
             .apply { description = "Recurring transactions that are due" })
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_BUDGET, "Budget alerts", NotificationManager.IMPORTANCE_DEFAULT)
-            .apply { description = "Spending near or over a budget" })
     }
 
     private fun readDates(s: String?): MutableMap<String, LocalDate> {

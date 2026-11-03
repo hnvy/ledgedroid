@@ -1,7 +1,5 @@
 package app.ledgedroid.core
 
-import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -96,33 +94,5 @@ object Reminders {
         return journal.transactions.any { tx ->
             !tx.forecast && !tx.date.isBefore(from) && !tx.date.isAfter(to) && Payees.of(tx.description).equals(payee, ignoreCase = true)
         }
-    }
-}
-
-/** An account over (or near) its budget this period: [actual] spent of [goal], in [commodity]. */
-data class BudgetAlert(val account: String, val commodity: String, val actual: BigDecimal, val goal: BigDecimal) {
-    val percent: Int get() = actual.multiply(BigDecimal(100)).divide(goal, 0, RoundingMode.DOWN).toInt()
-    val over: Boolean get() = actual > goal
-}
-
-object BudgetAlerts {
-    /**
-     * Budgeted accounts at [warnAt] percent of this month's budget or more (100: only those over it), from
-     * the journal's periodic rules, like hledger balance --budget for this month. Goals are compared in
-     * their own commodity; accounts with goals of zero or below (eg income) aren't checked.
-     */
-    fun check(journal: Journal, today: LocalDate, warnAt: Int = 100): List<BudgetAlert> {
-        if (journal.periodicRules.isEmpty()) return emptyList()
-        val start = today.withDayOfMonth(1)
-        val report = Budgets.report(journal, Query.ALL, BudgetOptions(interval = ReportInterval.MONTHLY, span = DateSpan(start, start.plusMonths(1))))
-        return report.rows.filter { !it.isUnbudgeted }.mapNotNull { row ->
-            val cell = row.cells.firstOrNull() ?: return@mapNotNull null
-            val goal = cell.goal?.takeIf { it.parts.size == 1 } ?: return@mapNotNull null
-            val (c, g) = goal.parts.entries.single()
-            if (g.signum() <= 0) return@mapNotNull null
-            val actual = cell.actual.quantityOf(c)
-            if (actual.multiply(BigDecimal(100)) < g.multiply(BigDecimal(warnAt))) null
-            else BudgetAlert(row.fullName, c, actual, g)
-        }.sortedByDescending { it.percent }
     }
 }

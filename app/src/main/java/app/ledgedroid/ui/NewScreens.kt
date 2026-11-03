@@ -446,7 +446,7 @@ fun IncludedFilesSection(folder: String?, included: List<String>, mentionsInclud
     }
 }
 
-/** Settings › Notifications: reminders for recurring transactions, and budget alerts. */
+/** Settings › Notifications: reminders for recurring transactions. */
 @Composable
 fun NotificationsSection(s: AlertSettings, allowed: Boolean, scheduled: Int, onChange: (AlertSettings) -> Unit) {
     val lc = LocalLedgerColors.current
@@ -454,11 +454,6 @@ fun NotificationsSection(s: AlertSettings, allowed: Boolean, scheduled: Int, onC
         SwitchLine("Reminders for recurring transactions",
             if (scheduled == 0) "Set a schedule on a template (Templates › ⋮ › Remind me…)." else "$scheduled template${if (scheduled == 1) " has" else "s have"} a schedule.",
             s.reminders) { onChange(s.copy(reminders = it)) }
-        SwitchLine("Budget alerts", "When spending reaches ${s.budgetWarnAt}% of a monthly budget (from the journal's ~ rules)" +
-                if (s.budgetWarnAt < 100) ", and again once it's over." else ".", s.budget) { onChange(s.copy(budget = it)) }
-        if (s.budget) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(75, 90, 100).forEach { p -> FilterChip(selected = s.budgetWarnAt == p, onClick = { onChange(s.copy(budgetWarnAt = p)) }, label = { Text("At $p%") }) }
-        }
         if (s.any && !allowed) Text("Notifications are turned off for Ledgedroid in Android's settings.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         Text("Checked a few times a day, and when the app opens.", style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
     }

@@ -1359,7 +1359,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ------------------------------------------------------------------ reminders, budget alerts
+    // ------------------------------------------------------------------ reminders
 
     /** When [id]'s transaction recurs, for reminders; null stops them. */
     fun setTemplateSchedule(id: String, schedule: Schedule?) {
@@ -1376,7 +1376,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         checkAlerts()
     }
 
-    /** Tell about anything due or over budget now (also done in the background). */
+    /** Tell about anything due now (also done in the background). */
     fun checkAlerts() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Alerts.check(getApplication()) } }
     }

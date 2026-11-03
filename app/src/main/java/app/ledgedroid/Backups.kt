@@ -337,7 +337,7 @@ class BootReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         BackupScheduler.update(context, Backups(context).settings().schedule)
-        // Reminders and budget alerts too.
+        // Reminders too.
         Alerts.schedule(context)
     }
 }

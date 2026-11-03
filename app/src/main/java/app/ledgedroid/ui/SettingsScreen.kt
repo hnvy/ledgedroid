@@ -74,7 +74,7 @@ fun SettingsScreen(
     /** Share into quick add: open the patterns screen. */
     onSharePatterns: () -> Unit = {},
     sharePatternCount: Int = 0,
-    /** Reminders and budget alerts. */
+    /** Reminders for recurring transactions. */
     alertSettings: AlertSettings = AlertSettings(),
     notificationsAllowed: Boolean = true,
     scheduledTemplates: Int = 0,

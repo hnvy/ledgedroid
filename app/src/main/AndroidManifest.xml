@@ -3,7 +3,7 @@
 
     <!-- Lets scheduled backup jobs survive a restart (JobInfo.setPersisted) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Reminders for recurring transactions and budget alerts (asked for when turned on) -->
+    <!-- Reminders for recurring transactions (asked for when turned on) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -64,7 +64,7 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
-        <!-- Reminders for recurring transactions and budget alerts -->
+        <!-- Reminders for recurring transactions -->
         <service
             android:name=".AlertsJobService"
             android:exported="false"
