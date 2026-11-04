@@ -128,6 +128,12 @@ by AI. I can't say that I'm 'proud' of it, but it has certainly helped me.
 | **Customisation** | Hide/pin accounts, saved reports, branch colours, amount bars, account types | Settings for different journal styles | Multiple profiles |
 | **Min Android version** | 8.0 | 8.0 | 5.1 |
 
+## Why no fancy graphs / stats?
+
+I tried them, and they all looked ugly and generic and left too much of a bad AI taste in my mouth.
+
+Ledgedroid should do one thing, and one thing only.
+
 ## How to use it
 
 - The main page shows all accounts and their respective balances. It's
