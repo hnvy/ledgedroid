@@ -68,6 +68,9 @@ fun SettingsScreen(
     onQuickAdd: (Boolean) -> Unit,
     quickAddDefault: Boolean,
     onQuickAddDefault: (Boolean) -> Unit,
+    /** Intelligent mode: hledger-iadd-like suggestions when adding. */
+    intelligent: Boolean = false,
+    onIntelligent: (Boolean) -> Unit = {},
     /** Quick add puts its defaults in the box as text, not as a hint. */
     quickAddFill: Boolean = false,
     onQuickAddFill: (Boolean) -> Unit = {},
@@ -112,6 +115,15 @@ fun SettingsScreen(
                         "already chosen. Full form in quick add switches to the form.",
                 quickAddDefault,
                 onQuickAddDefault,
+            )
+            ToggleRow(
+                "Intelligent mode",
+                "Adding works like hledger-iadd: your last transaction with the same description is followed, " +
+                        "its next account and its amounts suggested until it balances; suggestions match loosely (e:f:c " +
+                        "finds expenses:food:coffee), most used first; text ; comment adds a comment; and a duplicate is " +
+                        "pointed out before it's added. In the form, picking a payee fills in its last accounts.",
+                intelligent,
+                onIntelligent,
             )
             ToggleRow(
                 "Fill in quick add's defaults",

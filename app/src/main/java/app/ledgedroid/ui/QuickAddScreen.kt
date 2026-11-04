@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.Journal
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Edit
 import app.ledgedroid.core.QuickAnswer
@@ -105,14 +106,17 @@ fun QuickAddScreen(
     startHints: QuickHints = QuickHints(),
     /** Put each prompt's default in the box as text to edit, like the form, instead of as a grey hint. */
     fillDefaults: Boolean = false,
+    /** Intelligent mode (see Intelligent): follows similar transactions, iadd's matching, duplicates. */
+    intelligent: Boolean = false,
+    journal: Journal? = null,
     sharedText: String? = null,
     onSave: (TransactionDraft, Boolean) -> Unit,
     onToForm: (TransactionDraft) -> Unit,
     onClose: () -> Unit,
 ) {
     val lc = LocalLedgerColors.current
-    val engine: QuickAdd = remember(styles, suggestions, templates, declaredPayeesOnly) {
-        QuickAdd(styles, suggestions, templates, LocalDate.now(), declaredPayeesOnly)
+    val engine: QuickAdd = remember(styles, suggestions, templates, declaredPayeesOnly, intelligent, journal) {
+        QuickAdd(styles, suggestions, templates, LocalDate.now(), declaredPayeesOnly, journal, intelligent)
     }
     var state: QuickAddState by remember {
         mutableStateOf(startTemplate?.let { engine.startWith(it, startDate, startHints) } ?: engine.start(startDate, startHints))
@@ -298,7 +302,39 @@ fun QuickAddScreen(
                         )
                     }
                 }
+                // Intelligent: the earlier transaction being followed, while choosing accounts and amounts.
+                val followed = state.reference
+                if (followed != null && (state.step is QuickStep.Account || state.step is QuickStep.Amount)) {
+                    item {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("Following ${followed.date} ${followed.description}", style = MaterialTheme.typography.labelMedium, color = lc.mutedInk)
+                                followed.postings.filter { !it.generated }.forEach { p ->
+                                    Row {
+                                        Text(p.account, Modifier.weight(1f), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(styles.format(p.amount.commodity, p.amount.quantity), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (state.step == QuickStep.Confirm) {
+                    engine.duplicate(state)?.let { d ->
+                        item {
+                            Text(
+                                "This looks like a duplicate: ${d.date} ${d.description} is already in the journal with the same postings.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
                     item {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainer,
@@ -339,6 +375,10 @@ fun QuickAddScreen(
                                 )
                             }
                         }
+                    }
+                    // What a sum typed as an amount comes to.
+                    engine.amountPreview(state, field.text)?.let {
+                        Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
                     }
                     val shownProblem = problem ?: (saveState as? SaveState.Failed)?.message
                     if (shownProblem != null) {

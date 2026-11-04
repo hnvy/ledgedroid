@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.Intelligent
 import app.ledgedroid.Alerts
 import app.ledgedroid.AlertSettings
 import app.ledgedroid.IncludeFolder
@@ -1087,6 +1088,19 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
+    /** Intelligent mode (Settings): hledger-iadd-like suggestions in quick add and the form. Remembered. */
+    private val _intelligent = MutableStateFlow(prefs.getBoolean(KEY_INTELLIGENT, false))
+    val intelligent: StateFlow<Boolean> = _intelligent.asStateFlow()
+
+    fun setIntelligent(on: Boolean) {
+        _intelligent.value = on
+        prefs.edit().putBoolean(KEY_INTELLIGENT, on).apply()
+    }
+
+    /** The transaction to follow for [description] (Intelligent mode), from the journal as read. */
+    fun similarTo(description: String): Transaction? =
+        (_load.value as? LoadState.Loaded)?.journal?.let { Intelligent.similar(it, description) }
+
     /** Quick add puts each prompt's default in the box as text to edit, like the form, not as a hint. */
     private val _quickAddFill = MutableStateFlow(prefs.getBoolean(KEY_QUICK_ADD_FILL, false))
     val quickAddFill: StateFlow<Boolean> = _quickAddFill.asStateFlow()
@@ -1784,6 +1798,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_URI = "journalUri"
         private const val KEY_QUICK_ADD = "quickAdd"
         private const val KEY_QUICK_ADD_FILL = "quickAddFill"
+        private const val KEY_INTELLIGENT = "intelligentMode"
         private const val KEY_PAD_DECIMALS = "padDecimals"
         private const val KEY_QUICK_ADD_DEFAULT = "quickAddDefault"
         private const val KEY_ALIGN_AMOUNTS = "alignAmounts"

@@ -1,5 +1,7 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.Payees
+import app.ledgedroid.core.Transaction
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -146,6 +148,9 @@ fun AddScreen(
     onApplyTemplate: (Template) -> Unit,
     /** Add (or save changes); with true, add and start the next one. */
     onSave: (Boolean) -> Unit,
+    /** Intelligent mode: iadd's matching, and picking a payee fills in its last transaction's accounts. */
+    intelligent: Boolean = false,
+    similarTo: (String) -> Transaction? = { null },
     onSaveTemplate: (String) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -156,6 +161,8 @@ fun AddScreen(
     var nameTemplate by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var choosingFields by remember { mutableStateOf(false) }
+    // Intelligent mode: the transaction the accounts were filled in from, to say so under the payee.
+    var filledFrom: Transaction? by remember { mutableStateOf<Transaction?>(null) }
     var choosingLayout by remember { mutableStateOf(false) }
     val initial = remember { draft }
     // A hidden field shows while it has something in it, and then stays for as long as the form is open,
@@ -302,12 +309,20 @@ fun AddScreen(
                 label = "Payee",
                 focused = focused,
                 onFocus = { focused = it },
-                suggestions = { suggestions?.payeesMatching(draft.payee, declaredOnly = declaredPayeesOnly).orEmpty() },
+                suggestions = { suggestions?.payeesMatching(draft.payee, declaredOnly = declaredPayeesOnly, intelligent = intelligent).orEmpty() },
                 isExact = { suggestions?.isKnownPayee(it) == true },
-                onValueChange = { v -> onChange { it.copy(payee = v) } },
-                onPick = { v -> onChange { it.copy(payee = v) } },
+                onValueChange = { v -> filledFrom = null; onChange { it.copy(payee = v) } },
+                onPick = { v ->
+                    // Intelligent: with no accounts entered yet, start from the last transaction with this payee.
+                    val like = if (intelligent && draft.postings.all { it.isBlank }) similarTo(v) else null
+                    if (like != null) {
+                        val from = Entry.fromTransaction(like, styles, draft.date)
+                        onChange { it.copy(payee = v, postings = from.postings) }
+                    } else onChange { it.copy(payee = v) }
+                    filledFrom = like
+                },
                 capitalization = KeyboardCapitalization.Words,
-                supporting = payeeNote(suggestions, draft.payee, declaredPayeesOnly, focused == "payee"),
+                supporting = filledNote(filledFrom) ?: payeeNote(suggestions, draft.payee, declaredPayeesOnly, focused == "payee"),
                 suggestionNote = suggestions?.takeIf { !declaredPayeesOnly && it.hasDeclaredPayees }?.let { s ->
                     { p: String -> if (s.isDeclaredPayee(p)) null else "not declared" }
                 },
@@ -335,6 +350,7 @@ fun AddScreen(
                     styles = styles,
                     suggestions = suggestions,
                     showCurrency = shows(FormField.CURRENCY),
+                    intelligent = intelligent,
                     focused = focused,
                     onFocus = { focused = it },
                     canRemove = draft.postings.size > 2,
@@ -477,6 +493,7 @@ private fun PostingRow(
     styles: Styles,
     suggestions: EntrySuggestions?,
     showCurrency: Boolean,
+    intelligent: Boolean,
     focused: String?,
     onFocus: (String?) -> Unit,
     canRemove: Boolean,
@@ -498,7 +515,7 @@ private fun PostingRow(
                     label = "Account",
                     focused = focused,
                     onFocus = onFocus,
-                    suggestions = { suggestions?.accountsMatching(posting.account).orEmpty() },
+                    suggestions = { suggestions?.accountsMatching(posting.account, intelligent = intelligent).orEmpty() },
                     isExact = { suggestions?.isKnownAccount(it) == true },
                     onValueChange = { onChange(posting.copy(account = it)) },
                     onPick = { onChange(posting.copy(account = it)) },
@@ -814,6 +831,10 @@ private fun SaveButtons(
         }
     }
 }
+
+/** Intelligent mode: what to say under the payee when its accounts were filled in from [t], or null. */
+private fun filledNote(t: Transaction?): String? =
+    t?.let { "Filled in from your ${Payees.of(it.description)} of ${it.date}: change anything" }
 
 /** What to say under the payee about payee declarations, or null. */
 private fun payeeNote(suggestions: EntrySuggestions?, payee: String, declaredOnly: Boolean, focused: Boolean): String? {
