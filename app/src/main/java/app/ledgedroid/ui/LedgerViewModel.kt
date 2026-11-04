@@ -1126,6 +1126,15 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     fun similarTo(description: String): Transaction? =
         (_load.value as? LoadState.Loaded)?.journal?.let { Intelligent.similar(it, description) }
 
+    /** Quick add: Enter takes the only suggestion left at the payee and account prompts. Remembered. */
+    private val _quickAddEnterTakesOnly = MutableStateFlow(prefs.getBoolean(KEY_QUICK_ADD_SOLE, false))
+    val quickAddEnterTakesOnly: StateFlow<Boolean> = _quickAddEnterTakesOnly.asStateFlow()
+
+    fun setQuickAddEnterTakesOnly(on: Boolean) {
+        _quickAddEnterTakesOnly.value = on
+        prefs.edit().putBoolean(KEY_QUICK_ADD_SOLE, on).apply()
+    }
+
     /** Quick add puts each prompt's default in the box as text to edit, like the form, not as a hint. */
     private val _quickAddFill = MutableStateFlow(prefs.getBoolean(KEY_QUICK_ADD_FILL, false))
     val quickAddFill: StateFlow<Boolean> = _quickAddFill.asStateFlow()
@@ -1823,6 +1832,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_URI = "journalUri"
         private const val KEY_QUICK_ADD = "quickAdd"
         private const val KEY_QUICK_ADD_FILL = "quickAddFill"
+        private const val KEY_QUICK_ADD_SOLE = "quickAddEnterTakesOnly"
         private const val KEY_INTELLIGENT = "intelligentMode"
         private const val KEY_INTELLIGENT_FUZZY = "intelligentFuzzy"
         private const val KEY_INTELLIGENT_DUPLICATES = "intelligentDuplicates"

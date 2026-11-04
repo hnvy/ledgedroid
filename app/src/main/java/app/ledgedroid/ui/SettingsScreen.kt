@@ -79,6 +79,9 @@ fun SettingsScreen(
     /** Quick add puts its defaults in the box as text, not as a hint. */
     quickAddFill: Boolean = false,
     onQuickAddFill: (Boolean) -> Unit = {},
+    /** Quick add: Enter takes the only suggestion left. */
+    quickAddEnterTakesOnly: Boolean = false,
+    onQuickAddEnterTakesOnly: (Boolean) -> Unit = {},
     /** Share into quick add: open the patterns screen. */
     onSharePatterns: () -> Unit = {},
     sharePatternCount: Int = 0,
@@ -149,6 +152,14 @@ fun SettingsScreen(
                     )
                 }
             }
+            ToggleRow(
+                "Enter takes the only suggestion",
+                if (quickAddEnterTakesOnly) "In quick add, when what you've typed leaves one payee, template or account, Enter uses it " +
+                        "(\"groc\" becomes expenses:food:groceries). A whole name you've typed is kept as it is."
+                else "In quick add, Enter uses what you've typed; Tab picks a suggestion.",
+                quickAddEnterTakesOnly,
+                onQuickAddEnterTakesOnly,
+            )
             ToggleRow(
                 "Fill in quick add's defaults",
                 if (quickAddFill) "Each prompt starts with its default as text you can edit, like the form (eg a template's account)."

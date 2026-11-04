@@ -115,6 +115,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val quickAdd by vm.quickAdd.collectAsStateWithLifecycle()
     val quickAddDefault by vm.quickAddDefault.collectAsStateWithLifecycle()
     val quickAddFill by vm.quickAddFill.collectAsStateWithLifecycle()
+    val quickAddEnterTakesOnly by vm.quickAddEnterTakesOnly.collectAsStateWithLifecycle()
     val intelligent by vm.intelligent.collectAsStateWithLifecycle()
     val intelligentFuzzy by vm.intelligentFuzzy.collectAsStateWithLifecycle()
     val intelligentDuplicates by vm.intelligentDuplicates.collectAsStateWithLifecycle()
@@ -359,6 +360,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onQuickAddDefault = vm::setQuickAddDefault,
                     quickAddFill = quickAddFill,
                     onQuickAddFill = vm::setQuickAddFill,
+                    quickAddEnterTakesOnly = quickAddEnterTakesOnly,
+                    onQuickAddEnterTakesOnly = vm::setQuickAddEnterTakesOnly,
                     intelligent = intelligent,
                     onIntelligent = vm::setIntelligent,
                     intelligentFuzzy = intelligentFuzzy,
@@ -471,6 +474,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                         fuzzy = intelligentFuzzy,
                         checkDuplicates = intelligentDuplicates,
                         padDecimals = amountLayout.padDecimals,
+                        enterTakesOnly = quickAddEnterTakesOnly,
                         onSave = vm::saveQuick,
                         onToForm = vm::quickToForm,
                         onClose = vm::back,

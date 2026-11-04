@@ -307,6 +307,22 @@ class QuickAdd(
 
     private val descriptionsByUse: List<String> by lazy { journal?.let { Intelligent.descriptions(it) }.orEmpty() }
 
+    /**
+     * The one suggestion left for [text] at a payee or account prompt, for Enter to take (Settings › Enter
+     * takes the only suggestion), or null: when nothing's typed, when there are none or several, and when
+     * [text] is already a whole payee, description, template name or account, which Enter keeps as typed.
+     */
+    fun soleCompletion(s: QuickAddState, text: String): QuickCompletion? {
+        val t = text.trim()
+        if (t.isEmpty() || (s.step != QuickStep.Payee && s.step !is QuickStep.Account)) return null
+        val exact = when (s.step) {
+            QuickStep.Payee -> templates.any { it.name == t } || suggestions?.isKnownPayee(t) == true || (smart && t in descriptionsByUse)
+            else -> suggestions?.isKnownAccount(t) == true
+        }
+        if (exact) return null
+        return completions(s, t, limit = 2).singleOrNull()
+    }
+
     /** What a sum typed at an amount prompt comes to, eg "= \$15.70" for 12.50+3.20; null otherwise. */
     fun amountPreview(s: QuickAddState, text: String): String? {
         val i = (s.step as? QuickStep.Amount)?.index ?: return null

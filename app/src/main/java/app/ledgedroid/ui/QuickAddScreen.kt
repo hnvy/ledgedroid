@@ -115,6 +115,8 @@ fun QuickAddScreen(
     checkDuplicates: Boolean = true,
     /** The ".00" setting: whole amounts written with the commodity's usual decimals. */
     padDecimals: Boolean = true,
+    /** Enter takes the only suggestion left, at the payee and account prompts. */
+    enterTakesOnly: Boolean = false,
     sharedText: String? = null,
     onSave: (TransactionDraft, Boolean) -> Unit,
     onToForm: (TransactionDraft) -> Unit,
@@ -141,6 +143,10 @@ fun QuickAddScreen(
     val prompt: QuickPrompt = engine.prompt(state)
     // Intelligent mode's duplicate check: worked out once for each transaction, not each time the screen is drawn.
     val duplicate: Transaction? = remember(state, engine) { engine.duplicate(state) }
+    // The one suggestion Enter will take, if that's on and only one is left (not while Tab is choosing).
+    val sole: QuickCompletion? = remember(state, engine, field.text, enterTakesOnly, cycle) {
+        if (enterTakesOnly && cycle < 0) engine.soleCompletion(state, field.text) else null
+    }
     val focus = remember { FocusRequester() }
     val list = rememberLazyListState()
     val saving = saveState == SaveState.Saving
@@ -195,7 +201,10 @@ fun QuickAddScreen(
 
     fun answer() {
         if (saving) return
-        when (val r = engine.submit(state, field.text, completions.getOrNull(cycle))) {
+        // The only suggestion left, when Enter takes it; else what's typed, or the suggestion Tab is on.
+        val r = if (sole != null) engine.submit(state, sole.value, sole)
+        else engine.submit(state, field.text, completions.getOrNull(cycle))
+        when (r) {
             is QuickResult.Next -> {
                 val e = editing
                 if (e == null) go(r.state)
@@ -371,7 +380,7 @@ fun QuickAddScreen(
                         ) {
                             completions.forEachIndexed { i, c ->
                                 FilterChip(
-                                    selected = i == cycle,
+                                    selected = i == cycle || (cycle < 0 && c == sole),
                                     onClick = { pick(i) },
                                     label = {
                                         Text(
@@ -435,7 +444,8 @@ fun QuickAddScreen(
                         TextButton(onClick = { tab(1) }, enabled = completions.isNotEmpty()) { Text("⇥") }
                     }
                     Text(
-                        prompt.hint + (prompt.default?.let { " · Enter for $it" } ?: ""),
+                        sole?.let { "Enter takes ${it.value}" + if (it.template != null) " (template)" else "" }
+                            ?: (prompt.hint + (prompt.default?.let { " · Enter for $it" } ?: "")),
                         style = MaterialTheme.typography.bodySmall,
                         color = lc.mutedInk,
                         maxLines = 2,
