@@ -11,10 +11,7 @@
 <p align="center">
   <a href="https://hledger.org/sponsor.html"><img src="https://img.shields.io/badge/Sponsor-hledger-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white" alt="Sponsor hledger"></a>
   <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+">
-</p>
-
-<p align="center">
-<a href="https://github.com/hnvy/ledgedroid/releases"><img src="https://custom-icon-badges.demolab.com/github/downloads/hnvy/ledgedroid/total?style=for-the-badge&label=Downloads&logo=download&logoSource=feather&logoColor=white"></a>
+  <a href="https://github.com/hnvy/ledgedroid/releases"><img src="https://img.shields.io/github/downloads/hnvy/ledgedroid/total?style=flat-square" alt="Downloads"></a>
 </p>
 
 
