@@ -93,7 +93,7 @@ Harvey R., MD
   <tr>
     <td align="center" width="25%"><img src="./screenshots/Settings.png"><br><sub>Settings page</sub></td>
     <td align="center" width="25%"><img src="./screenshots/Add.png"><br><sub>Add transaction form</sub></td>
-    <td align="center" width="25%"><img src="./screenshots/QuickAdd.png"><br><sub>hledger-like Quick add</sub></td>
+    <td align="center" width="25%"><img src="./screenshots/QuickAdd.png"><br><sub>hledger-like quick add with an intelligent mode</sub></td>
   </tr>
 </table>
 
