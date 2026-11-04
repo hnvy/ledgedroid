@@ -42,6 +42,8 @@ data class QuickAddState(
     val hints: QuickHints = QuickHints(),
     /** The answer given at [previous]'s prompt that led here, as typed, to put back after an edit. */
     val input: QuickAnswer? = null,
+    /** Intelligent mode: the earlier transaction being followed (see [Intelligent.similar]), if any. */
+    val reference: Transaction? = null,
 ) {
     /** The postings answered so far. */
     val entered: Int
@@ -102,7 +104,12 @@ class QuickAdd(
     private val templates: List<Template> = emptyList(),
     private val today: LocalDate = LocalDate.now(),
     private val declaredPayeesOnly: Boolean = false,
+    /** The journal, for Intelligent mode's similar transactions, descriptions and duplicates. */
+    private val journal: Journal? = null,
+    /** Intelligent mode (see [Intelligent]): suggestions and defaults like hledger-iadd's. */
+    val intelligent: Boolean = false,
 ) {
+    private val smart get() = intelligent && journal != null
     private val defaultCommodity get() = suggestions?.defaultCommodity.orEmpty()
 
     fun start(date: LocalDate = today, hints: QuickHints = QuickHints()) =
@@ -124,14 +131,25 @@ class QuickAdd(
         QuickStep.Payee -> QuickPrompt(
             "Payee",
             s.hints.payee,
-            if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note",
+            (if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note") +
+                    if (smart) "; ; comment adds a comment" else "",
         )
-        is QuickStep.Account -> QuickPrompt(
-            "Account ${step.index + 1}",
-            templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() }
-                ?: s.hints.account?.takeIf { step.index == 0 },
-            if (step.index >= 2) "Enter with nothing, or ., to finish" else "Tab for accounts",
-        )
+        is QuickStep.Account -> {
+            val entered = s.draft.postings.take(step.index)
+            val balanced = smart && Intelligent.balanced(entered)
+            QuickPrompt(
+                "Account ${step.index + 1}",
+                templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() }
+                    ?: s.hints.account?.takeIf { step.index == 0 }
+                    // Intelligent: the similar transaction's next account, until it all balances.
+                    ?: s.reference?.takeIf { smart && !balanced }?.let { Intelligent.nextAccount(it, entered) },
+                when {
+                    balanced -> "It balances: Enter adds it, or add another account"
+                    step.index >= 2 -> "Enter with nothing, or ., to finish"
+                    else -> "Tab for accounts"
+                } + if (smart) "; account ; comment adds a comment" else "",
+            )
+        }
         is QuickStep.Amount -> QuickPrompt(
             "Amount ${step.index + 1}",
             defaultAmount(s, step.index),
@@ -145,14 +163,18 @@ class QuickAdd(
         QuickStep.Date -> listOf(today, today.minusDays(1), today.minusDays(2))
             .map { it.toString() }.filter { it.startsWith(text.trim()) && it != text.trim() }.map { QuickCompletion(it) }
         QuickStep.Payee -> payeeCompletions(text.trim(), limit)
-        is QuickStep.Account -> suggestions?.accountsMatching(text, limit).orEmpty().map { QuickCompletion(it) }
+        is QuickStep.Account ->
+            if (smart) suggestions?.accountsMatching(text, limit, intelligent = true).orEmpty().map { QuickCompletion(it) }
+            else suggestions?.accountsMatching(text, limit).orEmpty().map { QuickCompletion(it) }
         else -> emptyList()
     }
 
     /** Templates first (the first few when nothing's typed), then payees. */
     private fun payeeCompletions(t: String, limit: Int): List<QuickCompletion> {
         val fromTemplates = if (t.isEmpty()) templates.take(3) else templatesMatching(templates, t, 3)
-        val payees = suggestions?.payeesMatching(t, limit, declaredOnly = declaredPayeesOnly).orEmpty()
+        // Intelligent: whole descriptions, most used first, every word typed in them (as iadd).
+        val payees = if (smart) descriptionsByUse.filter { it != t && Intelligent.matches(t, it) }.take(limit)
+        else suggestions?.payeesMatching(t, limit, declaredOnly = declaredPayeesOnly).orEmpty()
         return (fromTemplates.map { QuickCompletion(it.name, it) } + payees.map { QuickCompletion(it) }).take(limit)
     }
 
@@ -211,13 +233,17 @@ class QuickAdd(
                         "Template" to "${template.name}: ${draft.description.ifEmpty { "no payee" }}",
                     )
                 }
-                val payee = answer.substringBefore('|').trim()
-                val note = if ('|' in answer) answer.substringAfter('|').trim() else ""
-                val draft = s.draft.copy(payee = payee, note = note)
+                val (text, comment) = if (smart) Intelligent.splitComment(given) else given to ""
+                val payee = text.substringBefore('|').trim()
+                val note = if ('|' in text) text.substringAfter('|').trim() else ""
+                val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment })
                 Entry.check(draft.copy(postings = listOf(DraftPosting("a", "0"), DraftPosting("b", "0"))), styles)
                     .errors.firstOrNull { it.startsWith("The payee") || it.startsWith("The note") }
                     ?.let { return QuickResult.Problem(it) }
-                next(s, s.copy(draft = draft, step = QuickStep.Account(0)), "Payee" to draft.description.ifEmpty { "(none)" })
+                // Intelligent: the transaction to follow, for the accounts and amounts that come next.
+                val reference = if (smart) Intelligent.similar(journal!!, draft.description) else null
+                next(s, s.copy(draft = draft, step = QuickStep.Account(0), reference = reference),
+                    "Payee" to draft.description.ifEmpty { "(none)" } + (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             is QuickStep.Account -> {
@@ -229,26 +255,30 @@ class QuickAdd(
                     Entry.check(draft, styles).firstProblem?.let { return QuickResult.Problem(it) }
                     return next(s, s.copy(draft = draft, step = QuickStep.Confirm), "" to "")
                 }
-                if (given.isEmpty()) return QuickResult.Problem("Type an account, or Tab through the suggestions")
-                if (given.any { it.isWhitespace() && it != ' ' } || given.contains("  ")) {
+                val (account, comment) = if (smart) Intelligent.splitComment(given) else given to ""
+                if (account.isEmpty()) return QuickResult.Problem("Type an account, or Tab through the suggestions")
+                if (account.any { it.isWhitespace() && it != ' ' } || account.contains("  ")) {
                     return QuickResult.Problem("An account can't contain two spaces or a tab")
                 }
-                val postings = s.draft.postings.take(i) + DraftPosting(account = given)
-                next(s, s.copy(draft = s.draft.copy(postings = postings), step = QuickStep.Amount(i)), "Account ${i + 1}" to given)
+                val postings = s.draft.postings.take(i) + DraftPosting(account = account, comment = comment)
+                next(s, s.copy(draft = s.draft.copy(postings = postings), step = QuickStep.Amount(i)),
+                    "Account ${i + 1}" to account + (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             is QuickStep.Amount -> {
                 val i = step.index
-                if (given.isEmpty()) return QuickResult.Problem("Type an amount, like 4.50")
-                val (amount, commodity) = splitAmount(given)
+                val (amountText, comment) = if (smart) Intelligent.splitComment(given) else given to ""
+                if (amountText.isEmpty()) return QuickResult.Problem("Type an amount, like 4.50")
+                val (amount, commodity) = splitAmount(amountText)
                     ?: return QuickResult.Problem("Put the currency before or after the number, not both")
                 if (Entry.parseAmount(amount) == null) {
                     return QuickResult.Problem(if (Entry.isExpression(amount)) "Not a sum this can work out, like 12.50+3.20" else "Not a number")
                 }
                 val c = commodity ?: currencyFor(s, i)
-                val postings = s.draft.postings.take(i) + s.draft.postings[i].copy(amount = amount, commodity = c)
+                val posting = s.draft.postings[i]
+                val postings = s.draft.postings.take(i) + posting.copy(amount = amount, commodity = c, comment = comment.ifEmpty { posting.comment })
                 next(s, s.copy(draft = s.draft.copy(postings = postings), step = QuickStep.Account(i + 1)),
-                    "Amount ${i + 1}" to show(amount, c))
+                    "Amount ${i + 1}" to show(amount, c) + (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             QuickStep.Confirm -> when (answer.lowercase()) {
@@ -258,6 +288,23 @@ class QuickAdd(
             }
         }
     }
+
+    private val descriptionsByUse: List<String> by lazy { journal?.let { Intelligent.descriptions(it) }.orEmpty() }
+
+    /** What a sum typed at an amount prompt comes to, eg "= \$15.70" for 12.50+3.20; null otherwise. */
+    fun amountPreview(s: QuickAddState, text: String): String? {
+        val i = (s.step as? QuickStep.Amount)?.index ?: return null
+        val t = if (smart) Intelligent.splitComment(text).first else text.trim()
+        val (amount, commodity) = splitAmount(t) ?: return null
+        if (!Entry.isExpression(amount)) return null
+        val q = Entry.parseAmount(amount) ?: return null
+        val c = commodity ?: currencyFor(s, i)
+        return "= " + show(Entry.amountInput(q, styles.styleFor(c)), c)
+    }
+
+    /** Intelligent: a transaction already in the journal just like the one about to be added, if any. */
+    fun duplicate(s: QuickAddState): Transaction? =
+        if (smart && s.step == QuickStep.Confirm) Intelligent.duplicateOf(journal!!, s.draft, styles) else null
 
     /** The state before the last answer, or null at the first prompt. */
     fun back(s: QuickAddState): QuickAddState? = s.previous
@@ -272,6 +319,16 @@ class QuickAdd(
         // A shared amount wins over a template's: it's what was actually spent.
         if (i == 0) s.hints.amount?.let { return it }
         templatePosting(s, i)?.takeIf { it.amount.isNotBlank() }?.let { return show(it.amount, it.commodity) }
+        // Intelligent: the similar transaction's amount for this account, while the new one still follows it
+        // (or already balances), as iadd; otherwise the amount that balances.
+        val ref = s.reference
+        if (smart && ref != null) {
+            val entered = s.draft.postings.take(i)
+            val account = s.draft.postings.getOrNull(i)?.account
+            if (account != null && (Intelligent.balanced(entered) || Intelligent.follows(ref, entered))) {
+                Intelligent.amountFor(ref, account)?.let { (q, c) -> return show(Entry.amountInput(q, styles.styleFor(c)), c) }
+            }
+        }
         if (i == 0) return null
         val sums = LinkedHashMap<String, BigDecimal>()
         for (p in s.draft.postings.take(i)) {

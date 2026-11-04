@@ -77,7 +77,9 @@ class EntrySuggestions private constructor(
      * "ex din" finds expenses:food:dining. Accounts with a part starting with the last word come first,
      * then the most used. With nothing typed, the most used accounts.
      */
-    fun accountsMatching(text: String, limit: Int = 8): List<String> {
+    fun accountsMatching(text: String, limit: Int = 8, intelligent: Boolean = false): List<String> {
+        // Intelligent mode: iadd's matching (words anywhere, or the starts of the account's parts), most used first.
+        if (intelligent) return accounts.filter { a -> a != text.trim() && Intelligent.matches(text, a) }.take(limit)
         val words = text.lowercase().split(Regex("[\\s:]+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return accounts.take(limit)
         val last = words.last()
@@ -91,12 +93,13 @@ class EntrySuggestions private constructor(
      * Payees containing the text, those starting with it first, then the most recent. With
      * [declaredOnly], only payees declared with a payee directive (including declared ones not used yet).
      */
-    fun payeesMatching(text: String, limit: Int = 6, declaredOnly: Boolean = false): List<String> {
+    fun payeesMatching(text: String, limit: Int = 6, declaredOnly: Boolean = false, intelligent: Boolean = false): List<String> {
         val t = text.trim().lowercase()
         val from = if (declaredOnly) declaredByRecency else payees
         if (t.isEmpty()) return from.take(limit)
         return from
-            .filter { it.lowercase().contains(t) && it != text.trim() }
+            // Intelligent mode: every word typed, anywhere in the payee ("cafe corner" finds Corner Cafe).
+            .filter { (if (intelligent) Intelligent.matches(t, it) else it.lowercase().contains(t)) && it != text.trim() }
             .sortedBy { if (it.lowercase().startsWith(t)) 0 else 1 }
             .take(limit)
     }
