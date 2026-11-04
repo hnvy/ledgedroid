@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon for "Add transaction". -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add"
+        android:shortcutId="add_transaction"
+        android:shortcutLongLabel="@string/add_transaction"
+        android:shortcutShortLabel="@string/add_transaction_short">
+        <intent
+            android:action="app.ledgedroid.action.ADD_TRANSACTION"
+            android:targetClass="app.ledgedroid.MainActivity"
+            android:targetPackage="app.ledgedroid" />
+    </shortcut>
+</shortcuts>
