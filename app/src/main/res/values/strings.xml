@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ledgedroid</string>
+    <string name="add_transaction">Add transaction</string>
+    <string name="add_transaction_short">Add</string>
+    <string name="widget_description">Add a transaction, or use one of your templates</string>
+</resources>
