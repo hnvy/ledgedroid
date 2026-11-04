@@ -115,6 +115,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val quickAdd by vm.quickAdd.collectAsStateWithLifecycle()
     val quickAddDefault by vm.quickAddDefault.collectAsStateWithLifecycle()
     val quickAddFill by vm.quickAddFill.collectAsStateWithLifecycle()
+    val intelligent by vm.intelligent.collectAsStateWithLifecycle()
     val pinned by vm.pinned.collectAsStateWithLifecycle()
     val treeStyle by vm.treeStyle.collectAsStateWithLifecycle()
     val branchHues by vm.branchHues.collectAsStateWithLifecycle()
@@ -353,6 +354,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onQuickAddDefault = vm::setQuickAddDefault,
                     quickAddFill = quickAddFill,
                     onQuickAddFill = vm::setQuickAddFill,
+                    intelligent = intelligent,
+                    onIntelligent = vm::setIntelligent,
                     onSharePatterns = { vm.push(Screen.SharePatterns) },
                     sharePatternCount = sharePatterns.size,
                     alertSettings = alertSettings,
@@ -419,6 +422,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                         onTemplateName = vm::setTemplateName,
                         onApplyTemplate = vm::applyTemplate,
                         onSave = { another -> vm.saveTransaction(another) },
+                        intelligent = intelligent,
+                        similarTo = vm::similarTo,
                         onSaveTemplate = vm::saveTemplate,
                         onClose = vm::back,
                     )
@@ -451,6 +456,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                         startHints = screen.shared?.takeIf { addedInSession == 0 }?.hints() ?: QuickHints(),
                         sharedText = screen.shared?.text?.takeIf { addedInSession == 0 },
                         fillDefaults = quickAddFill,
+                        intelligent = intelligent,
+                        journal = journal,
                         onSave = vm::saveQuick,
                         onToForm = vm::quickToForm,
                         onClose = vm::back,
