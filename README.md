@@ -107,7 +107,7 @@ Harvey R., MD
 ## Comparison to other hledger apps
 
 Ledgedroid has a lot of features. Its biggest downside is that it is sadly written
-by AI. I can't say that I'm 'proud' of it, but it has certainly helped me.
+by AI. I can't say that I'm 'proud' of it, but it has certainly helped me and I hope it helps you too.
 * The other apps are great and fully deserve your donations.
 * I was just in need of something more, which has not been available until now :)
 * If Ledgedroid is useful to you, please consider [sponsoring hledger](https://hledger.org/sponsor.html).
