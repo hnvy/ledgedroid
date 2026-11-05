@@ -1,5 +1,8 @@
 package app.ledgedroid.ui
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,19 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -59,10 +56,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 
-private enum class PayeeSort(val label: String) { RECENT("Recent"), SPENT("Spent"), COUNT("Most used"), NAME("A–Z") }
+enum class PayeeSort(val label: String) { RECENT("Recent"), SPENT("Spent"), COUNT("Most used"), NAME("A–Z") }
 
 /** A list of payees, and what it was worked out for. */
-private class PayeesResult(val key: Any, val view: PayeesView, val payees: List<PayeeSummary>)
+class PayeesResult(val key: PayeesKey, val view: PayeesView, val payees: List<PayeeSummary>)
+
+/**
+ * What a payee list was worked out for. The journal is compared by identity: comparing two journals with
+ * == would compare every transaction.
+ */
+class PayeesKey(val journal: Journal?, val span: DateSpan, val view: PayeesView) {
+    fun same(other: PayeesKey?) = other != null && other.journal === journal && other.span == span && other.view == view
+}
+
+/**
+ * Where the Payees screen was, kept while a payee is open so coming back finds it as it was: the sort, the
+ * filter, the place in the list, and the list itself, so it needn't be worked out again.
+ */
+data class PayeesPlace(
+    val sort: PayeeSort = PayeeSort.RECENT,
+    val filter: String = "",
+    val scrollIndex: Int = 0,
+    val scrollOffset: Int = 0,
+    val result: PayeesResult? = null,
+)
 
 /** Which payees the Payees screen lists. */
 enum class PayeesView(val label: String) {
@@ -86,16 +103,31 @@ fun PayeesScreen(
     onView: (PayeesView) -> Unit,
     onBack: () -> Unit,
     onOpenPayee: (String) -> Unit,
+    /** Where the screen was (see [PayeesPlace]), and how to keep it up to date. */
+    place: PayeesPlace = PayeesPlace(),
+    onPlace: (PayeesPlace) -> Unit = {},
 ) {
-    var filter by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf(PayeeSort.RECENT) }
+    val filter = place.filter
+    val sort = place.sort
+    // The list's place, as it was when a payee was opened; saved again on leaving, with the sort and filter
+    // as they are then (not as they were when the screen opened).
+    val listState = rememberLazyListState(place.scrollIndex, place.scrollOffset)
+    val latestPlace: PayeesPlace by rememberUpdatedState(place)
+    val latestOnPlace: (PayeesPlace) -> Unit by rememberUpdatedState(onPlace)
+    DisposableEffect(Unit) {
+        onDispose {
+            latestOnPlace(latestPlace.copy(scrollIndex = listState.firstVisibleItemIndex, scrollOffset = listState.firstVisibleItemScrollOffset))
+        }
+    }
     val anyDeclared = journal?.declaredPayees?.isNotEmpty() == true
     // Without payee directives, "declared" would be nobody and "not declared" everybody.
     val shownView = if (anyDeclared) view else PayeesView.ALL
     // The list stays up while another view is worked out, so switching doesn't flash a spinner.
-    val key = Triple(journal, span, shownView)
-    var result by remember { mutableStateOf<PayeesResult?>(null) }
-    LaunchedEffect(key) {
+    val key = PayeesKey(journal, span, shownView)
+    // Coming back: the list worked out before, if it's for the same journal, period and view.
+    var result: PayeesResult? by remember { mutableStateOf(place.result) }
+    LaunchedEffect(journal, span, shownView) {
+        if (key.same(result?.key)) return@LaunchedEffect
         val list = withContext(Dispatchers.Default) {
             journal?.let {
                 Payees.summaries(
@@ -106,6 +138,7 @@ fun PayeesScreen(
             }
         }
         result = list?.let { PayeesResult(key, shownView, it) }
+        latestOnPlace(latestPlace.copy(result = result))
     }
     val clipboard = LocalClipboardManager.current
     // "Copied" shows on the button for a moment after copying.
@@ -126,7 +159,7 @@ fun PayeesScreen(
             ) { CircularProgressIndicator() }
             return@Scaffold
         }
-        val working = result?.key != key
+        val working = !key.same(result?.key)
         // What the list on screen is (a moment behind the buttons while the next one is worked out).
         val listView = result?.view ?: shownView
         val styles = journal.styles
@@ -145,7 +178,7 @@ fun PayeesScreen(
             }
         Column(Modifier.padding(padding).fillMaxSize()) {
         if (working) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 32.dp)) {
             item(key = "controls") {
                 Column(
                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -163,27 +196,18 @@ fun PayeesScreen(
                             }
                         }
                     }
-                    OutlinedTextField(
-                        value = filter,
-                        onValueChange = { filter = it },
+                    // The list is narrowed when Enter (or ✓) is pressed, not while typing.
+                    FilterField(
+                        applied = filter,
+                        onApply = { onPlace(place.copy(filter = it, result = result)) },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Find a payee") },
-                        leadingIcon = { Icon(Icons.Default.Search, null) },
-                        trailingIcon = {
-                            if (filter.isNotEmpty()) IconButton(onClick = { filter = "" }) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    "Clear"
-                                )
-                            }
-                        },
+                        placeholder = "Find a payee",
                     )
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         PayeeSort.entries.forEachIndexed { i, s ->
                             SegmentedButton(
                                 selected = sort == s,
-                                onClick = { sort = s },
+                                onClick = { onPlace(place.copy(sort = s, result = result)) },
                                 shape = SegmentedButtonDefaults.itemShape(i, PayeeSort.entries.size),
                                 icon = {},
                             ) { Text(s.label, maxLines = 1) }

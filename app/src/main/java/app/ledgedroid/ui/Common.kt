@@ -1,5 +1,12 @@
 package app.ledgedroid.ui
 
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -203,4 +210,75 @@ fun SuggestionList(
             }
         }
     }
+}
+
+/**
+ * A box for filtering. What's typed is only applied when Enter (the keyboard's search key) or ✓ is
+ * pressed, and until then it says so; ✕ clears the filter at once. [applied] is the filter in effect: when
+ * it changes from elsewhere (cleared, a saved report), the box shows it.
+ */
+@Composable
+fun FilterField(
+    applied: String,
+    onApply: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    label: String? = null,
+    /** A problem with the filter in effect, or a note about it, shown under the box when nothing's pending. */
+    message: String? = null,
+    isError: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    textStyle: TextStyle? = null,
+    searchIcon: Boolean = true,
+    /** More buttons after ✓ / ✕, eg help. */
+    extraTrailing: (@Composable () -> Unit)? = null,
+    /** Called when ✕ is pressed (after clearing), eg to close the box too. */
+    onClear: (() -> Unit)? = null,
+    /** Typed text that isn't applied yet, eg for suggestions under the box. */
+    onTyping: ((String) -> Unit)? = null,
+) {
+    var text: String by rememberSaveable { mutableStateOf(applied) }
+    LaunchedEffect(applied) { text = applied }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val pending = text != applied
+    val apply = {
+        onApply(text)
+        keyboard?.hide()
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it; onTyping?.invoke(it) },
+        modifier = modifier,
+        singleLine = true,
+        label = label?.let { l -> { Text(l) } },
+        placeholder = placeholder?.let { p -> { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        leadingIcon = if (searchIcon) ({ Icon(Icons.Default.Search, null) }) else null,
+        trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (pending) {
+                    IconButton(onClick = apply) { Icon(Icons.Default.Check, contentDescription = "Filter") }
+                } else if (text.isNotEmpty() || onClear != null) {
+                    IconButton(onClick = { text = ""; onApply(""); onClear?.invoke() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear filter")
+                    }
+                }
+                extraTrailing?.invoke()
+            }
+        },
+        textStyle = textStyle ?: LocalTextStyle.current,
+        isError = isError && !pending,
+        supportingText = when {
+            pending -> ({ Text("Press Enter to filter") })
+            message != null -> ({ Text(message) })
+            else -> null
+        },
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = ImeAction.Search,
+            // Filters are typed exactly: don't autocorrect acct: or --budget into something else.
+            autoCorrectEnabled = false,
+            capitalization = KeyboardCapitalization.None,
+        ),
+        keyboardActions = KeyboardActions(onSearch = { apply() }, onDone = { apply() }),
+    )
 }

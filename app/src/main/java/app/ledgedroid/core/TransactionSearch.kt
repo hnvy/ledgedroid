@@ -11,22 +11,32 @@ object TransactionSearch {
     data class Result(val transactions: List<Transaction>, val total: Int, val error: String?)
 
     fun search(journal: Journal, text: String, styles: Styles = journal.styles, limit: Int = 500): Result {
-        val (words, queryText) = splitWords(text)
-        val query = try {
-            Query.parse(queryText)
-        } catch (e: IllegalArgumentException) {
-            return Result(emptyList(), 0, e.message)
-        }
-        val needles = words.map { it.lowercase() }
+        val (match, error) = matcher(text, styles)
+        if (error != null) return Result(emptyList(), 0, error)
         val out = ArrayList<Transaction>()
         var total = 0
         for (t in journal.transactions.asReversed()) {
-            if (!query.matchesTransaction(t)) continue
-            if (needles.isNotEmpty() && !needles.all { n -> contains(t, n, styles) }) continue
+            if (match != null && !match(t)) continue
             total++
             if (out.size < limit) out.add(t)
         }
         return Result(out, total, null)
+    }
+
+    /**
+     * What [text] matches, as a test of one transaction: null to match every transaction (nothing typed),
+     * or the problem with the text. The same rules as [search].
+     */
+    fun matcher(text: String, styles: Styles): Pair<((Transaction) -> Boolean)?, String?> {
+        if (text.isBlank()) return null to null
+        val (words, queryText) = splitWords(text)
+        val query = try {
+            Query.parse(queryText)
+        } catch (e: IllegalArgumentException) {
+            return null to e.message
+        }
+        val needles = words.map { it.lowercase() }
+        return { t: Transaction -> query.matchesTransaction(t) && (needles.isEmpty() || needles.all { n -> contains(t, n, styles) }) } to null
     }
 
     /** Plain words (no prefix, not negated) are searched broadly; everything else goes to the query. */

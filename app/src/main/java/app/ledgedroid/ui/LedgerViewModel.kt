@@ -1,5 +1,7 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.TransactionPages
+import app.ledgedroid.core.TransactionOrder
 import app.ledgedroid.core.Intelligent
 import app.ledgedroid.Alerts
 import app.ledgedroid.AlertSettings
@@ -312,6 +314,9 @@ sealed interface Screen {
 
     /** Journal health, like hledger check. */
     data object Health : Screen
+
+    /** Every transaction in the journal, filtered, a page at a time. */
+    data object AllTransactions : Screen
 
     /** The patterns for reading shared text. */
     data object SharePatterns : Screen
@@ -1166,6 +1171,20 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Where the Payees screen was (sort, filter, place in the list, and the list worked out), so coming back
+     * from a payee finds it as it was. The sort is also remembered between launches.
+     */
+    private val _payeesPlace = MutableStateFlow(
+        PayeesPlace(sort = PayeeSort.entries.firstOrNull { it.name == prefs.getString(KEY_PAYEES_SORT, null) } ?: PayeeSort.RECENT)
+    )
+    val payeesPlace: StateFlow<PayeesPlace> = _payeesPlace.asStateFlow()
+
+    fun setPayeesPlace(place: PayeesPlace) {
+        if (place.sort != _payeesPlace.value.sort) prefs.edit().putString(KEY_PAYEES_SORT, place.sort.name).apply()
+        _payeesPlace.value = place
+    }
+
+    /**
      * Which payees the Payees screen lists: declared ones (the default, and the least to add up), all,
      * or the ones not declared. Remembered between launches.
      */
@@ -1404,6 +1423,107 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 changed(src, w.undo, "${pending.message} (${if (n == 1) "1 line" else "$n lines"})")
                 applyWritten(src, w.text)
             }.onFailure { e -> _message.value = failureMessage(e, "make the change") }
+        }
+    }
+
+    // ------------------------------------------------------------------ all transactions
+
+    /** The All transactions view: its filter, order and page size, the pages loaded, and where it was scrolled. */
+    data class AllTransactionsUi(
+        val filter: String = "",
+        val order: TransactionOrder = TransactionOrder.NEWEST,
+        val pageSize: Int = 50,
+        val items: List<Transaction> = emptyList(),
+        /** Where the next page starts, or null when everything matching is loaded. */
+        val next: Int? = null,
+        /** How many transactions the journal has, to show without a filter. */
+        val total: Int = 0,
+        val loading: Boolean = false,
+        val error: String? = null,
+        /** The journal the items come from: when it changes, they're loaded again. */
+        val journal: Journal? = null,
+        val scroll: Int = 0,
+    )
+
+    private val _allTx = MutableStateFlow(AllTransactionsUi(pageSize = savedPageSize()))
+
+    /** The page size chosen last time, if it's still one of the choices. */
+    private fun savedPageSize(): Int {
+        val n: Int = prefs.getInt(KEY_TX_PAGE_SIZE, 50)
+        return if (n in TX_PAGE_SIZES) n else 50
+    }
+    val allTx: StateFlow<AllTransactionsUi> = _allTx.asStateFlow()
+    private var allTxJob: kotlinx.coroutines.Job? = null
+    // The ordered list and filter the loaded pages come from, so Load more carries on with them.
+    private var allTxList: List<Transaction> = emptyList()
+    private var allTxMatch: ((Transaction) -> Boolean)? = null
+
+    /** Load the first page when All transactions opens, unless it's loaded from this journal already. */
+    fun ensureAllTx() {
+        val j = (_load.value as? LoadState.Loaded)?.journal ?: return
+        val ui = _allTx.value
+        if (ui.journal !== j || (ui.items.isEmpty() && ui.error == null)) refreshAllTx(keep = ui.items.size)
+    }
+
+    /** Filter with [text] (once Enter is pressed). */
+    fun setAllTxFilter(text: String) {
+        _allTx.update { it.copy(filter = text, scroll = 0) }
+        refreshAllTx()
+    }
+
+    fun setAllTxOrder(order: TransactionOrder) {
+        _allTx.update { it.copy(order = order, scroll = 0) }
+        refreshAllTx()
+    }
+
+    fun setAllTxPageSize(n: Int) {
+        _allTx.update { it.copy(pageSize = n) }
+        prefs.edit().putInt(KEY_TX_PAGE_SIZE, n).apply()
+        refreshAllTx(keep = _allTx.value.items.size)
+    }
+
+    fun saveAllTxScroll(index: Int) = _allTx.update { it.copy(scroll = index) }
+
+    /**
+     * Load the first page again (after the filter, order or journal changed), or with [keep] as many as
+     * were loaded, so going back to the list after a change keeps its place. With [wait], after a pause in
+     * typing.
+     */
+    fun refreshAllTx(keep: Int = 0, wait: Boolean = false) {
+        allTxJob?.cancel()
+        allTxJob = viewModelScope.launch {
+            if (wait) kotlinx.coroutines.delay(250)
+            val j = (_load.value as? LoadState.Loaded)?.journal ?: return@launch
+            val ui = _allTx.value
+            _allTx.update { it.copy(loading = true) }
+            val result = withContext(Dispatchers.Default) {
+                val (match, error) = TransactionSearch.matcher(ui.filter, j.styles)
+                if (error != null) return@withContext null to error
+                val list = TransactionPages.ordered(j, ui.order)
+                allTxList = list
+                allTxMatch = match
+                TransactionPages.page(list, match, 0, maxOf(ui.pageSize, keep)) to null
+            }
+            val (page, error) = result
+            _allTx.update {
+                it.copy(
+                    items = page?.transactions.orEmpty(), next = page?.next, error = error, loading = false, journal = j,
+                    total = j.transactions.count { t -> !t.forecast },
+                    scroll = if (keep > 0) it.scroll else 0,
+                )
+            }
+        }
+    }
+
+    /** The next page, carrying on from where the last stopped. */
+    fun loadMoreTx() {
+        val ui = _allTx.value
+        val from = ui.next ?: return
+        if (ui.loading) return
+        allTxJob = viewModelScope.launch {
+            _allTx.update { it.copy(loading = true) }
+            val page = withContext(Dispatchers.Default) { TransactionPages.page(allTxList, allTxMatch, from, ui.pageSize, fromMatches = true) }
+            _allTx.update { it.copy(items = it.items + page.transactions, next = page.next, loading = false) }
         }
     }
 
@@ -1834,6 +1954,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_QUICK_ADD_FILL = "quickAddFill"
         private const val KEY_QUICK_ADD_SOLE = "quickAddEnterTakesOnly"
         private const val KEY_INTELLIGENT = "intelligentMode"
+        private const val KEY_TX_PAGE_SIZE = "transactionsPageSize"
+
+        /** How many transactions All transactions loads at a time, to choose from. */
+        val TX_PAGE_SIZES = listOf(25, 50, 100, 250, 500)
         private const val KEY_INTELLIGENT_FUZZY = "intelligentFuzzy"
         private const val KEY_INTELLIGENT_DUPLICATES = "intelligentDuplicates"
         private const val KEY_HEADER_COLLAPSED = "headerCollapsed"
@@ -1845,6 +1969,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_HIDDEN_FIELDS = "hiddenFormFields"
         private const val KEY_DECLARED_PAYEES_ONLY = "declaredPayeesOnly"
         private const val KEY_PAYEES_VIEW = "payeesView"
+        private const val KEY_PAYEES_SORT = "payeesSort"
         private const val KEY_SHOW_TIMINGS = "showTimings"
         private const val KEY_HIDDEN = "hiddenAccounts"
         private const val KEY_HIDING_PAUSED = "hidingPaused"

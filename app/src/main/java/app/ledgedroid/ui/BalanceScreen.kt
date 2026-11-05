@@ -24,8 +24,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -51,7 +49,6 @@ import androidx.compose.material3.HorizontalDivider
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -65,7 +62,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -93,12 +89,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.ledgedroid.core.AccountListMode
@@ -117,7 +110,6 @@ import app.ledgedroid.core.UNBUDGETED
 import app.ledgedroid.core.parentAccount
 import app.ledgedroid.core.Styles
 import app.ledgedroid.core.describeSpan
-import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -180,7 +172,8 @@ fun BalanceScreen(
     val hiddenCount = hidden.listed.size
     /** The list of hidden accounts, to pick which to show again. */
     var choosingUnhide by remember { mutableStateOf(false) }
-    var queryText by rememberSaveable { mutableStateOf(options.query) }
+    // The filter in effect is options.query; what's typed in the box is only applied with Enter.
+    val queryText = options.query
     var savingView by remember { mutableStateOf(false) }
     var showFilterHelp by remember { mutableStateOf(false) }
     /** The account the person long-pressed, to pin or hide it. */
@@ -191,19 +184,12 @@ fun BalanceScreen(
     val command = resolved.command
 
     // A saved view changed the query: show it in the search box.
-    LaunchedEffect(queryRevision) {
-        if (queryRevision > 0) queryText = options.query
-    }
 
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     var showWarnings by remember { mutableStateOf(false) }
 
-    LaunchedEffect(queryText) {
-        delay(200) // wait for a pause in typing
-        onQuery(queryText)
-    }
 
     val title = when (load) {
         is LoadState.Loaded -> load.name
@@ -287,6 +273,10 @@ fun BalanceScreen(
                                 onClick = { menuOpen = false; onOpen(Screen.SavedViews) },
                             )
                             DropdownMenuItem(
+                                text = { Text("All transactions") },
+                                onClick = { menuOpen = false; onOpen(Screen.AllTransactions) },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Journal health") },
                                 onClick = { menuOpen = false; onOpen(Screen.Health) },
                             )
@@ -367,8 +357,8 @@ fun BalanceScreen(
                     text = queryText,
                     error = report?.queryError,
                     applied = command.describe(),
-                    onChange = { queryText = it },
-                    onClose = { queryText = ""; searchOpen = false },
+                    onChange = onQuery,
+                    onClose = { searchOpen = false },
                     onHelp = { showFilterHelp = true },
                     focusOnShow = searchOpen,
                 )
@@ -406,7 +396,7 @@ fun BalanceScreen(
                             ReportList(
                                 report, report.options, collapsed, onToggleCollapsed, onOpenRegister,
                                 onShowAllDates = { onOptions { it.copy(preset = PeriodPreset.ALL) } },
-                                onClearFilter = { queryText = "" },
+                                onClearFilter = { onQuery("") },
                                 onLongPress = { actionsFor = it },
                             )
                         }
@@ -669,6 +659,10 @@ private fun levelsLabel(depth: Int?) = when (depth) {
     else -> "$depth levels"
 }
 
+/**
+ * The report's filter. Typing changes nothing until Enter (or ✓); ✕ clears it and closes the box. Under it:
+ * the problem with the filter, or what its options do ("Options: budget, monthly").
+ */
 @Composable
 private fun SearchField(
     text: String,
@@ -680,35 +674,16 @@ private fun SearchField(
     focusOnShow: Boolean
 ) {
     val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(focusOnShow) { if (focusOnShow) focus.requestFocus() }
-    OutlinedTextField(
-        value = text,
-        onValueChange = onChange,
+    FilterField(
+        applied = text,
+        onApply = onChange,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).focusRequester(focus),
-        singleLine = true,
-        placeholder = { Text("Filter: food, desc:rent, amt:>50, or options: --budget -M -H") },
-        leadingIcon = { Icon(Icons.Default.Search, null) },
-        trailingIcon = {
-            Row {
-                IconButton(onClick = onHelp) { Icon(Icons.Default.Info, contentDescription = "What can I type here?") }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Clear filter") }
-            }
-        },
+        placeholder = "Filter: food, desc:rent, amt:>50, or options: --budget -M -H",
+        message = error ?: applied.takeIf { it.isNotEmpty() }?.let { "Options: " + it.joinToString(", ") },
         isError = error != null,
-        supportingText = when {
-            error != null -> ({ Text(error) })
-            // Say what the typed options do, eg "Options: budget, monthly, running balances".
-            applied.isNotEmpty() -> ({ Text("Options: " + applied.joinToString(", ")) })
-            else -> null
-        },
-        keyboardOptions = KeyboardOptions(
-            imeAction = ImeAction.Search,
-            // Options and account names are typed exactly; don't autocorrect --budget into something else.
-            autoCorrectEnabled = false,
-            capitalization = KeyboardCapitalization.None,
-        ),
-        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        extraTrailing = { IconButton(onClick = onHelp) { Icon(Icons.Default.Info, contentDescription = "What can I type here?") } },
+        onClear = onClose,
     )
 }
 

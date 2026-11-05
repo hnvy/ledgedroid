@@ -1,5 +1,6 @@
 package app.ledgedroid
 
+import app.ledgedroid.ui.AllTransactionsScreen
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.runtime.setValue
@@ -250,6 +251,24 @@ fun LedgerApp(vm: LedgerViewModel) {
                 )
             }
 
+            Screen.AllTransactions -> {
+                BackHandler(onBack = vm::back)
+                val allTx by vm.allTx.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) { vm.ensureAllTx() }
+                AllTransactionsScreen(
+                    journal = journal,
+                    ui = allTx,
+                    onFilter = vm::setAllTxFilter,
+                    onOrder = vm::setAllTxOrder,
+                    onPageSize = vm::setAllTxPageSize,
+                    onLoadMore = vm::loadMoreTx,
+                    onRefresh = { keep -> vm.refreshAllTx(keep) },
+                    onScroll = vm::saveAllTxScroll,
+                    onOpenTransaction = { vm.push(Screen.TransactionDetail(it)) },
+                    onBack = vm::back,
+                )
+            }
+
             Screen.Health -> {
                 BackHandler(onBack = vm::back)
                 val j = journal
@@ -305,12 +324,15 @@ fun LedgerApp(vm: LedgerViewModel) {
             Screen.Payees -> {
                 BackHandler(onBack = vm::back)
                 val payeesView by vm.payeesView.collectAsStateWithLifecycle()
+                val payeesPlace by vm.payeesPlace.collectAsStateWithLifecycle()
                 PayeesScreen(
                     journal, span,
                     view = payeesView,
                     onView = vm::setPayeesView,
                     onBack = vm::back,
                     onOpenPayee = { vm.push(Screen.Payee(it)) },
+                    place = payeesPlace,
+                    onPlace = vm::setPayeesPlace,
                 )
             }
 

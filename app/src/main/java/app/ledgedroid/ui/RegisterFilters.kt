@@ -11,21 +11,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -39,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.ledgedroid.core.RegisterFilter
@@ -90,37 +85,34 @@ private fun FilterPanel(ui: RegisterUi, filter: RegisterFilter, onFilter: (Regis
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        OutlinedTextField(
-            value = filter.text,
-            onValueChange = { onFilter(filter.copy(text = it)) },
-            label = { Text("Description or comment") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = clearButton(filter.text) { onFilter(filter.copy(text = "")) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        // Each box is applied when Enter (or ✓) is pressed, not while typing.
+        FilterField(
+            applied = filter.text,
+            onApply = { onFilter(filter.copy(text = it)) },
+            label = "Description or comment",
             modifier = Modifier.fillMaxWidth(),
         )
 
         // The amount's size: the In / Out buttons above choose the sign.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = filter.minAmount,
-                onValueChange = { onFilter(filter.copy(minAmount = it)) },
-                label = { Text("Amount at least") },
-                singleLine = true,
+            FilterField(
+                applied = filter.minAmount,
+                onApply = { onFilter(filter.copy(minAmount = it)) },
+                label = "Amount at least",
+                searchIcon = false,
                 textStyle = NumberStyle,
+                keyboardType = KeyboardType.Decimal,
                 isError = filter.amountError != null && filter.minAmount.isNotBlank(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                 modifier = Modifier.weight(1f),
             )
-            OutlinedTextField(
-                value = filter.maxAmount,
-                onValueChange = { onFilter(filter.copy(maxAmount = it)) },
-                label = { Text("At most") },
-                singleLine = true,
+            FilterField(
+                applied = filter.maxAmount,
+                onApply = { onFilter(filter.copy(maxAmount = it)) },
+                label = "At most",
+                searchIcon = false,
                 textStyle = NumberStyle,
+                keyboardType = KeyboardType.Decimal,
                 isError = filter.amountError != null && filter.maxAmount.isNotBlank(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -177,11 +169,6 @@ private fun FilterPanel(ui: RegisterUi, filter: RegisterFilter, onFilter: (Regis
 
 private fun <T> Set<T>.toggle(x: T): Set<T> = if (x in this) this - x else this + x
 
-private fun clearButton(text: String, onClear: () -> Unit): (@Composable () -> Unit)? =
-    if (text.isEmpty()) null else {
-        { IconButton(onClick = onClear) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
-    }
-
 @Composable
 private fun Label(text: String) {
     Text(
@@ -221,19 +208,20 @@ private fun SuggestingField(
     onValue: (String) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // What's typed (suggestions follow it); it's applied with Enter, or by picking a suggestion.
+    var typed: String by remember(value) { mutableStateOf(value) }
     Column {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValue,
-            label = { Text(label) },
-            placeholder = { Text(placeholder) },
-            trailingIcon = clearButton(value) { onValue("") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        FilterField(
+            applied = value,
+            onApply = onValue,
+            label = label,
+            placeholder = placeholder,
+            searchIcon = false,
+            onTyping = { typed = it },
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
         )
         if (focused) {
-            val t = value.trim()
+            val t = typed.trim()
             val shown = choices.filter { it != t && (t.isEmpty() || it.contains(t, ignoreCase = true)) }.take(6)
             SuggestionList(shown, onPick = onValue)
         }

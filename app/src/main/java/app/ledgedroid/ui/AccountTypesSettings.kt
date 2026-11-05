@@ -14,14 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -218,15 +212,11 @@ private fun AccountPickerDialog(journal: Journal, onPick: (String) -> Unit, onDi
         title = { Text("Choose an account") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
-                    placeholder = { Text("Part of its name, eg expns") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    trailingIcon = {
-                        if (text.isNotEmpty()) IconButton(onClick = { text = "" }) { Icon(Icons.Default.Close, "Clear") }
-                    },
+                // The list is narrowed when Enter (or ✓) is pressed, not while typing.
+                FilterField(
+                    applied = text,
+                    onApply = { text = it },
+                    placeholder = "Part of its name, eg expns",
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (shown.isEmpty()) {
