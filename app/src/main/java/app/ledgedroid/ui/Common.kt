@@ -241,7 +241,8 @@ fun FilterField(
     LaunchedEffect(applied) { text = applied }
     val keyboard = LocalSoftwareKeyboardController.current
     val pending = text != applied
-    val apply = {
+    // Typed: an untyped lambda ending in keyboard?.hide() would be () -> Unit?, which onClick doesn't take.
+    val apply: () -> Unit = {
         onApply(text)
         keyboard?.hide()
     }
