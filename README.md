@@ -292,6 +292,24 @@ tried first and in order, with named groups `(?<amount>…)`,
 pattern can also start from a template. A box there tries a message
 against them all.
 
+## Renaming and journal health
+
+**Rename…** (long-press an account) renames it and its subaccounts
+everywhere in the journal: postings, budget (`~`) and auto posting
+rules, and account directives; pins, hiding and account types follow.
+
+**Recategorise** (a payee's screen) moves that payee's postings from one
+account to another. Both show every changed line first, and offer Undo
+afterwards. Postings in included files, or written differently through
+an `alias` or `apply account`, are listed rather than changed.
+
+**Journal health** (menu), like `hledger check`: accounts used but not
+declared, payees not declared (once the journal declares some), dates
+out of order within each file, and failed balance
+assertions. **Declare** (or Declare all) adds the `account` or `payee`
+directives after the existing ones, shown first; the others open the
+transaction to fix.
+
 ## Journal support
 
 Supported: `include`; market prices and
