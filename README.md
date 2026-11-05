@@ -16,11 +16,15 @@
 
 
 ## NOTE TO USER!
-- Ledgedroid is based on hledger, which is free (beer and speech) software maintained
-by Simon et al. If Ledgedroid is useful to you, please consider
-[sponsoring hledger](https://hledger.org/sponsor.html).
-- The app icon was drawn using the beautiful [Aseprite](https://www.aseprite.org/). Buy it and you won't regret it!
-- **In addition to GPL 3.0, finances generated from this project and its forks MUST go to hledger.**
+- Ledgedroid is based on hledger, which is free (beer and speech)
+  software maintained by Simon et al. If Ledgedroid is useful to you,
+  please consider [sponsoring
+  hledger](https://hledger.org/sponsor.html).
+- The app icon was drawn using the beautiful
+  [Aseprite](https://www.aseprite.org/). Buy it and you won't regret
+  it!
+- **In addition to GPL 3.0, finances generated from this project and
+  its forks MUST go to hledger.**
 
 ## Is this... AI?
 
@@ -67,9 +71,10 @@ Harvey R., MD
 
 ## Quick glance
 
-- Balance, forecast, balance sheet, income statement and budget reports, by
-  period, with trend charts
-- hledger queries like `desc:`, `amt:>100`, `tag:trip`, and many more typed straight into the filter
+- Balance, forecast, balance sheet, income statement and budget
+  reports, by period, with trend charts
+- hledger queries like `desc:`, `amt:>100`, `tag:trip`, and many more
+  typed straight into the filter
 - Save commonly used reports/filters
 - Set reminders for recurring payments and add them with **one click**
 - A full entry form, an `hledger add`-style quick add, **templates**, a
@@ -77,8 +82,10 @@ Harvey R., MD
 - Customisable **colours** for each account and its subaccounts
 - Pin and hide accounts
 - Keep your journal healthy with a **Check**
-- **Rename** and **Recategorise** accounts, payees, and transactions rapidly
-- Share text/SMS/notifications (eg from bank) and match transactions using RegEx patterns
+- **Rename** and **Recategorise** accounts, payees, and transactions
+  rapidly
+- Share text/SMS/notifications (eg from bank) and match transactions
+  using RegEx patterns
 
 <table>
   <tr>
@@ -109,7 +116,7 @@ Harvey R., MD
 Ledgedroid has a lot of features. Its biggest downside is that it is sadly written
 by AI. I can't say that I'm 'proud' of it, but it has certainly helped me and I hope it helps you too.
 * The other apps are great and fully deserve your donations.
-* I was just in need of something more, which has not been available until now :)
+* I was just in need of something more, which has not been available (until now)
 * If Ledgedroid is useful to you, please consider [sponsoring hledger](https://hledger.org/sponsor.html).
 
 | | **Ledgedroid** | **NanoLedger** | **MoLe** |
@@ -121,7 +128,7 @@ by AI. I can't say that I'm 'proud' of it, but it has certainly helped me and I 
 | **Balance reports** | `balance`, balance sheet, income statement, budget, multi-period columns, depth, `-H`, `-V`/`-X` valuation, `--forecast`, `--auto` | None; lists transactions only | Hierarchical account list with current balances (seems that reports are planned) |
 | **Transaction list + search** | Per-account register with running balance, advanced In/Out split, advanced filters; search with hledger query terms | List of all transactions, search (including by amount) | Transaction list filtered by account name |
 | **Adding transactions** | Full form, `hledger add`-style quick add, batch entry, amount arithmetic, autocomplete | Add form with autocomplete for payee, note and accounts | New-transaction form that auto-fills from earlier transactions |
-| **Intelligent adding mode** | Feature-ful intelligent mode that allows for predictions and rapid completion of transactions. | No | No |
+| **Intelligent adding mode** | Feature-ful intelligent mode that allows for predictions and rapid completion of transactions | No | No |
 | **Editing / deleting transactions** | Yes, except transactions with features the form can't show; one-tap status marking for any transaction; Undo | Yes | No (?) |
 | **Templates + shortcuts** | Templates, home-screen widget, quick settings tile, app shortcuts, scheduled reminders, share a bank SMS into quick add (using RegEx!) | No, but some are planned | Templates matched against QR codes (clipboard and SMS matching planned) |
 | **Journal maintenance** | Rename accounts, recategorise payees, journal health checks (`hledger check`-like) | No | Not applicable as it is done on the server |
@@ -131,8 +138,8 @@ by AI. I can't say that I'm 'proud' of it, but it has certainly helped me and I 
 
 ## Why no fancy graphs / stats?
 
-I tried them, and they all looked ugly and generic and left too much of a
-bad AI taste in my mouth.
+I tried them, and they all looked ugly and generic and left too much
+of a bad AI taste in my mouth.
 
 Ledgedroid should do one thing, and one thing only.
 
@@ -154,9 +161,9 @@ Ledgedroid should do one thing, and one thing only.
   click it, a text area will appears allowing you to enter some common
   hledger commands (like `--incomestatement` or `is`, `--balancesheet`
   or `bs`, `--budget`). Tap ⓘ in it for a full list.
-- **Saved reports** (menu, or the starred chips above the report): save
-  the current report, with its period, options and search, to come
-  back to with one tap. The income statement comes as one.
+- **Saved reports** (⋮, or the starred chips above the report): save the
+  current report, with its period, options and search, to come back to
+  with one tap. The income statement comes as one.
 - The magnifying glass is a search function. It searches every
   transaction, newest first. Plain words match descriptions, accounts,
   comments and amounts ("cafe", "4.50"); all the filter terms above
@@ -173,23 +180,30 @@ Ledgedroid should do one thing, and one thing only.
   under a star at the top of every report, with its total including
   subaccounts (per period, and with goals in the budget). In the tree
   it gets a star and a gold edge. Balance sheets and income statements
-  only show pinned accounts that belong to them. **Hide pinned
-  accounts at 0** (⋮ by the Pinned heading) omits those with nothing
-  to show, and the heading counts them.
+  only show pinned accounts that belong to them. **Hide pinned accounts
+  at 0** (⋮ by the Pinned heading) omits those with nothing to show,
+  and the heading counts them.
 - Tap an account for its transactions with a running balance, and a
   transaction for its postings, comments, tags and journal text.
     - When an account has money going both ways in the period, buttons
       show one side, named by type: **In /
   Out** (assets), **Charges / Payments** (liabilities), **Spending /
-  Refunds** (expenses), **Received / Reversed** (revenues), **Positive
-  / Negative** (others), with counts. The total becomes that side's
-  and the equivalent filter (`amt:<0`/`amt:>0`) is shown.
+  Refunds** (expenses), **Received / Reversed** (revenues), **Positive /
+  Negative** (others), with counts. The total becomes that side's and
+  the equivalent filter (`amt:<0`/`amt:>0`) is shown.
     - **Advanced filters** narrow the list by description or comment
       words, amount (at least/at most), status,
   other account, tag, currency and dates, with suggestions from the
   account's transactions. All must match; the total follows; **Clear**
   removes them. Sides and filters persist when you open a transaction
   and come back.
+- **All transactions** (press on ⋮) shows every transaction in the
+  journal, newest first, oldest first or as written in the file, with
+  a filter box that takes the same words and terms as Search (`cafe`,
+  `acct:food amt:>15`, `date:2026-10`, `tag:trip`). To keep a big
+  journal quick, they're loaded a page at a time: choose how many
+  (**25, 50, 100, 250, 500** at a time, remembered), and **Load more** for
+  the next page.
 
 ## Adding, editing and deleting
 
@@ -198,45 +212,45 @@ one amount can be left empty, and amounts can be sums (`12+8`) and
 other basic arithmetics. It won't save until it balances. **✓✓** saves
 and starts another.
 
-**Quick add** (Settings) works like `hledger add`, one prompt at a
-time, with Tab to cycle suggestions and Enter for defaults. Dates can
-be `11-02`, `yesterday` or `-3`.
+**Quick add** (Settings) works like `hledger add`, one prompt at a time,
+with Tab to cycle suggestions and Enter for defaults. Dates can be
+`11-02`, `yesterday` or `-3`.
 
-Transactions are appended in the journal's style; ⋮ › **Align
-amounts** or **Amount spacing…** changes the layout, and **Fields
-shown…** hides unused fields.
+Transactions are appended in the journal's style; ⋮ › **Align amounts**
+or **Amount spacing…** changes the layout, and **Fields shown…** hides
+unused fields.
 
 Tap a transaction to **Edit**, **Delete** or mark it **Pending** /
-**Cleared**. Transactions with features the form can't represent
-(codes, costs, assertions, virtual postings…) can be marked but not
-edited. Changes are refused if the file changed elsewhere, and
-**Undo** reverts the last one. Every write is verified, and the
-original is restored if it fails.
+**Cleared**. Transactions with features the form can't represent (codes,
+costs, assertions, virtual postings…) can be marked but not
+edited. Changes are refused if the file changed elsewhere, and **Undo**
+reverts the last one. Every write is verified, and the original is
+restored if it fails.
 
 **Templates** prefill the form; save from the form's ⋮, manage in the
 main menu. Open the form from the widget, quick settings tile or app
 shortcut.
 
-In the form, Prices can be given with an amount (**@ Add a price**
-under the amount).  This opens a Price field (`@ $1.10` is the price
-of each unit, `@@ $99` of all of it; without `@`, of each); in quick
-add, after the amount: `90 EUR @ $1.10`, `10 AAPL @@ $1500`. The
+In the form, Prices can be given with an amount (**@ Add a price** under
+the amount).  This opens a Price field (`@ $1.10` is the price of each
+unit, `@@ $99` of all of it; without `@`, of each); in quick add,
+after the amount: `90 EUR @ $1.10`, `10 AAPL @@ $1500`. The
 transaction balances at the price, so the amount left empty, or quick
 add's amount that balances, is worked out at cost (`90 EUR @ $1.10`
 balances with `$-99`).
   - Note that the prices are written after the amount, in the
-    journal's style for their currency, and follow **Write .00 on
-    whole amounts**; with **Align amounts**, the amounts still line
-    up.
+    journal's style for their currency, and follow **Write .00 on whole
+    amounts**; with **Align amounts**, the amounts still line up.
   - Transactions with prices can be edited, and a template keeps its
     prices. In Intelligent mode, a followed transaction's price comes
-    with its amount. **Fields shown…** can hide the Add a price link;
-    a price that's given always shows.
+    with its amount. **Fields shown…** can hide the Add a price link; a
+    price that's given always shows.
 
 ### **Intelligent mode**
 
 This can be found in **Settings › Adding transactions**, and it makes
-adding work like [hledger-iadd](https://github.com/hpdeifel/hledger-iadd):
+adding work like
+[hledger-iadd](https://github.com/hpdeifel/hledger-iadd):
 
 - In quick add, once there's a description, your most recent
   transaction with the same description (or else the same payee) is
@@ -258,7 +272,6 @@ adding work like [hledger-iadd](https://github.com/hpdeifel/hledger-iadd):
   accounts are entered fills them in from its last transaction, saying
   so under the payee.
 
-
 ## Extra bits
 
 There are widgets which display the "add transaction" templates. There
@@ -277,8 +290,8 @@ You can give a template a schedule (Templates › ⋮ › Remind me…: every
 N days, weeks or months, from a date). On the day, a notification
 comes, unless a transaction with that payee is already in the journal;
 tap it to add from the template (quick add or the form, as set). It's
-in **Settings › Notifications**, checked a few times a day and when
-the app opens.
+in **Settings › Notifications**, checked a few times a day and when the
+app opens.
 
 You can share a bank SMS, a notification's text or a note to
 Ledgedroid, and quick add starts with the amount, currency, date and
@@ -296,14 +309,14 @@ against them all.
 
 **Rename…** (long-press an account) renames it and its subaccounts
 everywhere in the journal: postings, budget (`~`) and auto posting
-rules, and account directives; pins, hiding and account types follow.
+rules, and account directives; pins, hiding and account types
+follow. **Recategorise** (a payee's screen) moves that payee's postings
+from one account to another. Both show every changed line first, and
+offer Undo afterwards. Postings in included files, or written
+differently through an `alias` or `apply account`, are listed rather
+than changed.
 
-**Recategorise** (a payee's screen) moves that payee's postings from one
-account to another. Both show every changed line first, and offer Undo
-afterwards. Postings in included files, or written differently through
-an `alias` or `apply account`, are listed rather than changed.
-
-**Journal health** (menu), like `hledger check`: accounts used but not
+**Journal health** (press on ⋮), like `hledger check`: accounts used but not
 declared, payees not declared (once the journal declares some), dates
 out of order within each file, and failed balance
 assertions. **Declare** (or Declare all) adds the `account` or `payee`
