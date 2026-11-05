@@ -131,7 +131,8 @@ by AI. I can't say that I'm 'proud' of it, but it has certainly helped me and I 
 
 ## Why no fancy graphs / stats?
 
-I tried them, and they all looked ugly and generic and left too much of a bad AI taste in my mouth.
+I tried them, and they all looked ugly and generic and left too much of a
+bad AI taste in my mouth.
 
 Ledgedroid should do one thing, and one thing only.
 
@@ -215,6 +216,48 @@ original is restored if it fails.
 **Templates** prefill the form; save from the form's ⋮, manage in the
 main menu. Open the form from the widget, quick settings tile or app
 shortcut.
+
+In the form, Prices can be given with an amount (**@ Add a price**
+under the amount).  This opens a Price field (`@ $1.10` is the price
+of each unit, `@@ $99` of all of it; without `@`, of each); in quick
+add, after the amount: `90 EUR @ $1.10`, `10 AAPL @@ $1500`. The
+transaction balances at the price, so the amount left empty, or quick
+add's amount that balances, is worked out at cost (`90 EUR @ $1.10`
+balances with `$-99`).
+  - Note that the prices are written after the amount, in the
+    journal's style for their currency, and follow **Write .00 on
+    whole amounts**; with **Align amounts**, the amounts still line
+    up.
+  - Transactions with prices can be edited, and a template keeps its
+    prices. In Intelligent mode, a followed transaction's price comes
+    with its amount. **Fields shown…** can hide the Add a price link;
+    a price that's given always shows.
+
+### **Intelligent mode**
+
+This can be found in **Settings › Adding transactions**, and it makes
+adding work like [hledger-iadd](https://github.com/hpdeifel/hledger-iadd):
+
+- In quick add, once there's a description, your most recent
+  transaction with the same description (or else the same payee) is
+  followed, and shown above the prompt: its next account is each
+  account prompt's default, and its amount for that account each
+  amount prompt's, as long as the new transaction still follows it
+  (otherwise the amount that balances). Once the postings balance, no
+  account is suggested, so Enter finishes.
+- Suggestions match fuzzily and loosely and the most used come first:
+  every word typed, anywhere (`cafe corner` finds Corner Cafe), or the
+  starts of an account's parts (`e:f:c`, `efc` or `exfoco` find
+  `expenses:food:coffee`). In quick add, the payee suggestions are
+  whole descriptions, *most used* first.
+- `text ; comment` adds a comment: to the transaction at the payee
+  prompt, to the posting at an account or amount prompt.
+- Before adding, a transaction just like one already in the journal
+  (same date, description and postings) is pointed out.
+- In the form, the same matching is used, and picking a payee while no
+  accounts are entered fills them in from its last transaction, saying
+  so under the payee.
+
 
 ## Extra bits
 
