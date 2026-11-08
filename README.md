@@ -20,6 +20,7 @@
   software maintained by Simon et al. If Ledgedroid is useful to you,
   please consider [sponsoring
   hledger](https://hledger.org/sponsor.html).
+- Ledgedroid is not affiliated with hledger.
 - The app icon was drawn using the beautiful
   [Aseprite](https://www.aseprite.org/). Buy it and you won't regret
   it!
