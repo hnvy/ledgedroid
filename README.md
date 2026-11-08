@@ -335,7 +335,10 @@ assignments, `(virtual)` and `[balanced virtual]` postings; either
 decimal mark, digit groups, left/right and quoted commodity symbols;
 `account` (with `type:`), `commodity` (with `format`), `payee`,
 `decimal-mark`, `D`, `Y`/`year`, `alias`, `apply account` and
-`comment` directives. Comment lines under a posting belong to it.
+`comment` directives. Comment lines under a posting belong to it. Query
+terms: account patterns, `acct:`, `desc:`, `payee:`, `cur:`, `status:`,
+`date:`, `amt:`, `tag:`, `depth:`, `not:` (not `date2:`, `code:`,
+`real:`, `expr:` and the like).
 
 Included files are read once the journal's folder is chosen in
 **Settings › Included files** (Android only lets an app read files
@@ -344,7 +347,4 @@ and `?` in the last part; `apply account` and comment blocks end with
 their file, as in hledger. Included files are read, not changed: their
 transactions show everywhere, but edit them where they are.
 
-Not supported: lots, timeclock and timedot. Query terms:
-account patterns, `acct:`, `desc:`, `payee:`, `cur:`, `status:`,
-`date:`, `amt:`, `tag:`, `depth:`, `not:` (not `date2:`, `code:`,
-`real:`, `expr:` and the like).
+Not supported: lots, timeclock and timedot.
