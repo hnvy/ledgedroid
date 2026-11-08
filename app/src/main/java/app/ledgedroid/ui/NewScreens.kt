@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.clickable
@@ -422,27 +423,36 @@ fun ScheduleDialog(template: Template, onSave: (Schedule?) -> Unit, onDismiss: (
 
 // ====================================================================== settings sections
 
-/** Settings › Included files: the folder include directives are read from. */
+/**
+ * Settings › Included files: the folder include directives are read from. Laid out like Backups' folder:
+ * a title, what's chosen (in red when the journal includes files that aren't read), and the same button.
+ */
 @Composable
 fun IncludedFilesSection(folder: String?, included: List<String>, mentionsIncludes: Boolean, onChoose: () -> Unit, onForget: () -> Unit) {
     val lc = LocalLedgerColors.current
-    Column(Modifier.padding(horizontal = 24.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("A journal can include other files (include 2026.journal). Android only lets Ledgedroid read files it's given, " +
-                "so choose the folder the journal is in (or one above it) to read them. Included files are read, not changed: " +
-                "edit their transactions where they are.", style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
+    val name = folder?.let { app.ledgedroid.IncludeFolder.name(android.net.Uri.parse(it)) }
+    Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Included files folder", style = MaterialTheme.typography.bodyLarge)
         Text(
             when {
-                folder == null && mentionsIncludes -> "This journal includes other files, which aren't read yet."
-                folder == null -> "No folder chosen."
-                included.isEmpty() -> "Folder: ${app.ledgedroid.IncludeFolder.name(android.net.Uri.parse(folder))}"
-                else -> "Folder: ${app.ledgedroid.IncludeFolder.name(android.net.Uri.parse(folder))}. Reading ${included.size} included file${if (included.size == 1) "" else "s"}: ${included.joinToString()}"
+                name == null && mentionsIncludes -> "Not chosen, and this journal includes other files, which aren't read yet. " +
+                        "Android only lets Ledgedroid read files it's given, so choose the folder the journal is in (or one above it)."
+                name == null -> "Not chosen. If the journal includes other files (include 2026.journal), choose the folder it's in to read them."
+                included.isEmpty() -> "$name. Included files are read from here."
+                else -> "$name. Reading ${included.size} included file${if (included.size == 1) "" else "s"}: ${included.joinToString()}"
             },
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (name == null && mentionsIncludes) MaterialTheme.colorScheme.error else lc.mutedInk,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onChoose) { Text(if (folder == null) "Choose folder…" else "Choose another…") }
-            if (folder != null) TextButton(onClick = onForget) { Text("Stop reading them") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onChoose) { Text(if (name == null) "Choose folder" else "Change folder") }
+            if (name != null) TextButton(onClick = onForget) { Text("Stop reading them") }
         }
+        Text(
+            "Included files are read, not changed: edit their transactions where they are.",
+            style = MaterialTheme.typography.bodySmall,
+            color = lc.mutedInk,
+        )
     }
 }
 

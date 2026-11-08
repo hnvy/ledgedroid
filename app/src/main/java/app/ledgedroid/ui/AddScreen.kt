@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.layout.PaddingValues
 import app.ledgedroid.core.Payees
 import app.ledgedroid.core.Transaction
@@ -119,7 +120,9 @@ enum class FormField(val label: String, val description: String) {
     NOTE("Note", "Written after the payee as payee | note"),
     CURRENCY("Currency", "Hidden, every amount gets the journal's usual currency"),
     COMMENT("Comment", "A comment or tags on the transaction"),
-    PRICE("Prices", "\"@ Add a price\" under each amount, for @ or @@ prices (other currencies, shares)"),
+    PRICE("Prices", "\"@ Price\" under each amount, for @ or @@ prices (other currencies, shares)"),
+    ASSERTION("Balance assertions", "\"= Assertion\" under each amount, to have hledger check the balance after it"),
+    POSTING_COMMENT("Account comments", "\"; Comment\" under each account, for a comment on its line"),
 }
 
 /**
@@ -178,6 +181,8 @@ fun AddScreen(
         if (draft.comment.isNotBlank()) add(FormField.COMMENT)
         if (suggestions != null && draft.postings.any { it.commodity.trim() != defaultCommodity }) add(FormField.CURRENCY)
         if (draft.postings.any { it.cost.isNotBlank() }) add(FormField.PRICE)
+        if (draft.postings.any { it.assertion.isNotBlank() }) add(FormField.ASSERTION)
+        if (draft.postings.any { it.comment.isNotBlank() }) add(FormField.POSTING_COMMENT)
     }
     var revealed by remember { mutableStateOf(emptySet<FormField>()) }
     LaunchedEffect(withValues) { revealed = revealed + withValues }
@@ -356,6 +361,8 @@ fun AddScreen(
                     suggestions = suggestions,
                     showCurrency = shows(FormField.CURRENCY),
                     showPrice = shows(FormField.PRICE),
+                    showAssertion = shows(FormField.ASSERTION),
+                    showComment = shows(FormField.POSTING_COMMENT),
                     intelligent = intelligent,
                     fuzzy = fuzzy,
                     focused = focused,
@@ -500,8 +507,10 @@ private fun PostingRow(
     styles: Styles,
     suggestions: EntrySuggestions?,
     showCurrency: Boolean,
-    /** Offer "@ Add a price" (a price that's there shows anyway). */
+    /** Offer "@ Price", "= Assertion", "; Comment" (one that's filled in shows anyway). */
     showPrice: Boolean,
+    showAssertion: Boolean,
+    showComment: Boolean,
     intelligent: Boolean,
     fuzzy: Boolean,
     focused: String?,
@@ -590,36 +599,90 @@ private fun PostingRow(
                     capitalization = KeyboardCapitalization.Characters,
                 )
             }
-            // A price, @ each or @@ for all of it, as in the journal: shown when there is one or it's asked for.
-            val costError = check.costErrors[index]
+            // After the amount, as in the journal: a price, a balance assertion, a comment. Each shows when it has
+            // something in it or is asked for; a row of links asks for the others.
             var priceOpen by remember(index) { mutableStateOf(false) }
-            if (posting.cost.isNotBlank() || priceOpen) {
-                OutlinedTextField(
-                    value = posting.cost,
-                    onValueChange = { onChange(posting.copy(cost = it)) },
-                    label = { Text("Price") },
-                    placeholder = { Text("@ \$1.10 each, or @@ \$99 in all") },
-                    singleLine = true,
-                    textStyle = NumberStyle,
-                    isError = costError != null,
-                    supportingText = {
-                        Text(costError ?: "With @ it's the price of each; with @@, of all of it. It balances at this price.")
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { onChange(posting.copy(cost = "")); priceOpen = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "No price")
+            var assertionOpen by remember(index) { mutableStateOf(false) }
+            var commentOpen by remember(index) { mutableStateOf(false) }
+            val priceShown = posting.cost.isNotBlank() || priceOpen
+            val assertionShown = posting.assertion.isNotBlank() || assertionOpen
+            val commentShown = posting.comment.isNotBlank() || commentOpen
+            if (priceShown) PostingExtraField(
+                value = posting.cost,
+                onValue = { onChange(posting.copy(cost = it)) },
+                label = "Price",
+                placeholder = "@ \$1.10 each, or @@ \$99 in all",
+                note = check.costErrors[index] ?: "With @ it's the price of each; with @@, of all of it. It balances at this price.",
+                isError = check.costErrors[index] != null,
+                number = true,
+                onRemove = { onChange(posting.copy(cost = "")); priceOpen = false },
+            )
+            if (assertionShown) PostingExtraField(
+                value = posting.assertion,
+                onValue = { onChange(posting.copy(assertion = it)) },
+                label = "Balance assertion",
+                placeholder = "= \$1,234.56",
+                note = check.assertionErrors[index]
+                    ?: "The account's balance after this posting, which hledger checks: = in this currency, == the only one, * with subaccounts",
+                isError = check.assertionErrors[index] != null,
+                number = true,
+                onRemove = { onChange(posting.copy(assertion = "")); assertionOpen = false },
+            )
+            if (commentShown) PostingExtraField(
+                value = posting.comment,
+                onValue = { onChange(posting.copy(comment = it)) },
+                label = "Comment",
+                placeholder = "On this account's line, eg receipt:yes",
+                note = null,
+                isError = false,
+                number = false,
+                onRemove = { onChange(posting.copy(comment = "")); commentOpen = false },
+            )
+            val links = listOfNotNull(
+                ("@ Price" to { priceOpen = true }).takeIf { showPrice && !priceShown && posting.amount.isNotBlank() },
+                ("= Assertion" to { assertionOpen = true }).takeIf { showAssertion && !assertionShown && posting.amount.isNotBlank() },
+                ("; Comment" to { commentOpen = true }).takeIf { showComment && !commentShown && posting.account.isNotBlank() },
+            )
+            if (links.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    links.forEach { (label, open) ->
+                        TextButton(onClick = open, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
                         }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else if (showPrice && posting.amount.isNotBlank()) {
-                TextButton(onClick = { priceOpen = true }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                    Text("@ Add a price", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
     }
+}
+
+/** One of a posting's extras (price, balance assertion, comment): a box with ✕ to take it away again. */
+@Composable
+private fun PostingExtraField(
+    value: String,
+    onValue: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    note: String?,
+    isError: Boolean,
+    number: Boolean,
+    onRemove: () -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValue,
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
+        singleLine = true,
+        textStyle = if (number) NumberStyle else LocalTextStyle.current,
+        isError = isError,
+        supportingText = note?.let { n -> { Text(n) } },
+        trailingIcon = {
+            IconButton(onClick = onRemove) { Icon(Icons.Default.Close, contentDescription = "No ${label.lowercase()}") }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /** "4.50" ↔ "-4.50". */

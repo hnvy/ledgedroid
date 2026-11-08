@@ -14,6 +14,11 @@ data class DraftPosting(
      * @, each unit. Empty for none.
      */
     val cost: String = "",
+    /**
+     * A balance assertion, as typed: "= $1,234.56" (that commodity's balance after this posting), "==" (the
+     * only commodity), "=*" / "==*" (including subaccounts), like hledger. Empty for none.
+     */
+    val assertion: String = "",
 ) {
     val isBlank: Boolean get() = account.isBlank() && amount.isBlank()
 }
@@ -96,11 +101,13 @@ data class DraftCheck(
     val unbalancedBy: MixedAmount?,
     /** Problems with a posting's price, keyed by index into the draft's postings. */
     val costErrors: Map<Int, String> = emptyMap(),
+    /** Problems with a posting's balance assertion, keyed by index into the draft's postings. */
+    val assertionErrors: Map<Int, String> = emptyMap(),
 ) {
-    val ok: Boolean get() = errors.isEmpty() && accountErrors.isEmpty() && amountErrors.isEmpty() && costErrors.isEmpty()
+    val ok: Boolean get() = errors.isEmpty() && accountErrors.isEmpty() && amountErrors.isEmpty() && costErrors.isEmpty() && assertionErrors.isEmpty()
     val firstProblem: String?
         get() = errors.firstOrNull() ?: accountErrors.values.firstOrNull() ?: amountErrors.values.firstOrNull()
-            ?: costErrors.values.firstOrNull()
+            ?: costErrors.values.firstOrNull() ?: assertionErrors.values.firstOrNull()
 }
 
 /** One line to write: a posting with its amount worked out. quantity is null only while the form can't be balanced. */
@@ -113,6 +120,8 @@ data class ResolvedPosting(
     val inferred: Boolean = false,
     /** Its price, @ or @@, if one was given. */
     val cost: Cost? = null,
+    /** Its balance assertion, if one was given. */
+    val assertion: BalanceAssertion? = null,
 )
 
 /**
@@ -145,10 +154,18 @@ object Entry {
         val sums = LinkedHashMap<String, BigDecimal>()
         val blanks = ArrayList<Int>()
         val costErrors = HashMap<Int, String>()
+        val assertionErrors = HashMap<Int, String>()
         for (i in used) {
             val p = draft.postings[i]
             accountProblem(p.account)?.let { accountErrors[i] = it }
             if (p.comment.any { it == '\n' || it == '\r' }) errors.add("Comments on accounts must be one line.")
+            if (p.assertion.isNotBlank()) {
+                parseAssertion(p.assertion).second?.let { assertionErrors[i] = it }
+                // Without an amount, = would set it (a balance assignment), which the form doesn't make.
+                if (p.amount.isBlank() && assertionErrors[i] == null) {
+                    assertionErrors[i] = "A balance assertion needs an amount here: with none, hledger would work the amount out from it"
+                }
+            }
             if (p.amount.isBlank()) {
                 if (p.cost.isNotBlank()) costErrors[i] = "A price needs an amount to go with it"
                 blanks.add(i)
@@ -193,7 +210,7 @@ object Entry {
                 errors.add("The amounts don't balance: they add up to ${styles.format(sum)}.")
             }
         }
-        return DraftCheck(errors, accountErrors, amountErrors, inferredIndex, inferred, unbalancedBy, costErrors)
+        return DraftCheck(errors, accountErrors, amountErrors, inferredIndex, inferred, unbalancedBy, costErrors, assertionErrors)
     }
 
     private fun accountProblem(account: String): String? {
@@ -348,6 +365,7 @@ object Entry {
                         parseAmount(p.amount),
                         comment,
                         cost = if (p.cost.isBlank()) null else parseCost(p.cost).first,
+                        assertion = if (p.assertion.isBlank()) null else parseAssertion(p.assertion).first,
                     )
                 )
 
@@ -428,6 +446,7 @@ object Entry {
                     append(" ".repeat(gap.coerceAtLeast(AmountLayout.MIN_SPACES))).append(text)
                     // The price after the amount; alignment is of the amounts themselves.
                     p.cost?.let { append(' ').append(costText(it, styles, layout.padDecimals)) }
+                    p.assertion?.let { append(' ').append(assertionText(it, styles, layout.padDecimals)) }
                 }
                 if (p.comment.isNotEmpty()) append("  ; ").append(p.comment)
             }
@@ -667,6 +686,11 @@ object Entry {
                         cost.quantity.compareTo(row.cost.quantity) != 0)) {
                 throw EntryException("The price for ${row.account} wouldn't read back as entered. $nothing")
             }
+            val asserted = parsed[0].assertion
+            if (row.assertion != null && (asserted == null || asserted.total != row.assertion.total || asserted.inclusive != row.assertion.inclusive ||
+                        asserted.amount.commodity != row.assertion.amount.commodity || asserted.amount.quantity.compareTo(row.assertion.amount.quantity) != 0)) {
+                throw EntryException("The balance assertion for ${row.account} wouldn't read back as entered. $nothing")
+            }
             if (parsed[0].comment != row.comment) throw EntryException("The comment on ${row.account} wouldn't read back as entered. $nothing")
         }
     }
@@ -709,7 +733,8 @@ object Entry {
         for (p in t.postings) {
             if (p.generated) continue
             if (p.kind != PostingKind.REAL) out.add("virtual postings")
-            if (p.assertion != null) out.add("balance assertions")
+            // An assertion with no amount written is an assignment: hledger works the amount out from it.
+            if (p.assertion != null && p.inferred) out.add("balance assignments (= with no amount)")
             if (p.status != Status.UNMARKED) out.add("postings marked cleared or pending")
             if (p.comment.contains('\n')) out.add("an account comment on several lines")
         }
@@ -744,6 +769,7 @@ object Entry {
                 p.amount.commodity,
                 comment,
                 cost = p.amount.cost?.let { costText(it, styles) }.orEmpty(),
+                assertion = p.assertion?.let { assertionText(it, styles) }.orEmpty(),
             )
         }
         return TransactionDraft(
@@ -773,6 +799,27 @@ object Entry {
         if (q.signum() < 0) return null to "A price can't be negative: the amount's sign says which way it goes"
         return Cost(total, commodity.trim(), q) to null
     }
+
+    /**
+     * A balance assertion as typed: "= $1,234.56", "== $100", "=* $5" or "==* $5" (hledger's kinds), the
+     * amount's currency before or after it, or none for a bare number. Returns it, or the problem with it.
+     */
+    fun parseAssertion(text: String): Pair<BalanceAssertion?, String?> {
+        val t = text.trim()
+        if (!t.startsWith("=")) return null to "Start with =, eg = \$1,234.56 (or ==, =*, ==*)"
+        val total = t.startsWith("==")
+        var rest = t.removePrefix("==").removePrefix("=")
+        val inclusive = rest.startsWith("*")
+        rest = rest.removePrefix("*").trim()
+        if (rest.isEmpty()) return null to "Type the balance to check, eg = \$1,234.56"
+        val (number, commodity) = QuickAdd.splitAmount(rest) ?: return null to "Put the balance's currency before or after it, not both"
+        val q = parseAmount(number) ?: return null to (if (isExpression(number)) "Not a sum this can work out" else "The balance isn't a number")
+        return BalanceAssertion(Amount(commodity?.trim().orEmpty(), q), total, inclusive, 0) to null
+    }
+
+    /** A balance assertion as written in the journal: "= $1,234.56", in the commodity's style. */
+    fun assertionText(a: BalanceAssertion, styles: Styles, pad: Boolean = true): String =
+        (if (a.total) "==" else "=") + (if (a.inclusive) "*" else "") + " " + formatExact(a.amount.commodity, a.amount.quantity, styles, pad)
 
     /** A price as written in the journal: "@ $1.10" or "@@ $99", in the commodity's style. */
     fun costText(cost: Cost, styles: Styles, pad: Boolean = true): String =

@@ -138,7 +138,7 @@ class QuickAdd(
             "Payee",
             s.hints.payee,
             (if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note") +
-                    if (smart) "; ; comment adds a comment" else "",
+                    "; ; comment adds a comment",
         )
         is QuickStep.Account -> {
             val entered = s.draft.postings.take(step.index)
@@ -153,13 +153,14 @@ class QuickAdd(
                     balanced -> "It balances: Enter adds it, or add another account"
                     step.index >= 2 -> "Enter with nothing, or ., to finish"
                     else -> "Tab for accounts"
-                } + if (smart) "; account ; comment adds a comment" else "",
+                } + "; account ; comment adds a comment",
             )
         }
         is QuickStep.Amount -> QuickPrompt(
             "Amount ${step.index + 1}",
             defaultAmount(s, step.index),
-            if (step.index == 0) "eg 4.50, \$4.50 or 4.50 EUR" else "Enter for the amount that balances",
+            (if (step.index == 0) "eg 4.50, \$4.50 or 4.50 EUR" else "Enter for the amount that balances") +
+                "; then @ price, = balance, ; comment if wanted",
         )
         QuickStep.Confirm -> QuickPrompt("Add this?", "yes", "Enter adds it")
     }
@@ -239,7 +240,7 @@ class QuickAdd(
                         "Template" to "${template.name}: ${draft.description.ifEmpty { "no payee" }}",
                     )
                 }
-                val (text, comment) = if (smart) Intelligent.splitComment(given) else given to ""
+                val (text, comment) = Intelligent.splitComment(given)
                 val payee = text.substringBefore('|').trim()
                 val note = if ('|' in text) text.substringAfter('|').trim() else ""
                 val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment })
@@ -261,7 +262,7 @@ class QuickAdd(
                     Entry.check(draft, styles).firstProblem?.let { return QuickResult.Problem(it) }
                     return next(s, s.copy(draft = draft, step = QuickStep.Confirm), "" to "")
                 }
-                val (account, comment) = if (smart) Intelligent.splitComment(given) else given to ""
+                val (account, comment) = Intelligent.splitComment(given)
                 if (account.isEmpty()) return QuickResult.Problem("Type an account, or Tab through the suggestions")
                 if (account.any { it.isWhitespace() && it != ' ' } || account.contains("  ")) {
                     return QuickResult.Problem("An account can't contain two spaces or a tab")
@@ -273,11 +274,16 @@ class QuickAdd(
 
             is QuickStep.Amount -> {
                 val i = step.index
-                val (typed, comment) = if (smart) Intelligent.splitComment(given) else given to ""
-                // A price after the amount, as in the journal: 90 EUR @ $1.10, or 10 AAPL @@ $1500.
-                val at = typed.indexOf('@')
-                val amountText = if (at >= 0) typed.substring(0, at).trim() else typed
-                val costText = if (at >= 0) typed.substring(at).trim() else ""
+                val (typed, comment) = Intelligent.splitComment(given)
+                // After the amount, as in the journal: a price (90 EUR @ $1.10, 10 AAPL @@ $1500), then a balance
+                // assertion (= $1,234.56).
+                val eq = typed.indexOf('=')
+                val assertionText = if (eq >= 0) typed.substring(eq).trim() else ""
+                val beforeAssertion = if (eq >= 0) typed.substring(0, eq).trim() else typed
+                val at = beforeAssertion.indexOf('@')
+                val amountText = if (at >= 0) beforeAssertion.substring(0, at).trim() else beforeAssertion
+                val costText = if (at >= 0) beforeAssertion.substring(at).trim() else ""
+                if (assertionText.isNotEmpty()) Entry.parseAssertion(assertionText).second?.let { return QuickResult.Problem(it) }
                 if (amountText.isEmpty()) return QuickResult.Problem("Type an amount, like 4.50")
                 if (costText.isNotEmpty()) Entry.parseCost(costText).second?.let { return QuickResult.Problem(it) }
                 val (amount, commodity) = splitAmount(amountText)
@@ -291,10 +297,11 @@ class QuickAdd(
                 }
                 val posting = s.draft.postings[i]
                 val postings = s.draft.postings.take(i) +
-                        posting.copy(amount = amount, commodity = c, comment = comment.ifEmpty { posting.comment }, cost = costText)
+                        posting.copy(amount = amount, commodity = c, comment = comment.ifEmpty { posting.comment }, cost = costText,
+                            assertion = assertionText)
                 next(s, s.copy(draft = s.draft.copy(postings = postings), step = QuickStep.Account(i + 1)),
                     "Amount ${i + 1}" to show(amount, c) + (if (costText.isNotEmpty()) " $costText" else "") +
-                            (if (comment.isNotEmpty()) " ; $comment" else ""))
+                            (if (assertionText.isNotEmpty()) " $assertionText" else "") + (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             QuickStep.Confirm -> when (answer.lowercase()) {
@@ -326,7 +333,7 @@ class QuickAdd(
     /** What a sum typed at an amount prompt comes to, eg "= \$15.70" for 12.50+3.20; null otherwise. */
     fun amountPreview(s: QuickAddState, text: String): String? {
         val i = (s.step as? QuickStep.Amount)?.index ?: return null
-        val t = (if (smart) Intelligent.splitComment(text).first else text.trim()).substringBefore('@').trim()
+        val t = Intelligent.splitComment(text).first.substringBefore('=').substringBefore('@').trim()
         val (amount, commodity) = splitAmount(t) ?: return null
         if (!Entry.isExpression(amount)) return null
         val q = Entry.parseAmount(amount) ?: return null

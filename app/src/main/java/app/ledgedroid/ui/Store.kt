@@ -170,7 +170,8 @@ internal object Store {
         .put("comment", d.comment)
         .put("postings", JSONArray().also { a ->
             d.postings.forEach { p ->
-                a.put(JSONObject().put("account", p.account).put("amount", p.amount).put("commodity", p.commodity).put("cost", p.cost))
+                a.put(JSONObject().put("account", p.account).put("amount", p.amount).put("commodity", p.commodity).put("cost", p.cost)
+                    .put("assertion", p.assertion).put("comment", p.comment))
             }
         })
 
@@ -184,7 +185,8 @@ internal object Store {
             comment = o.optString("comment"),
             postings = (0 until ps.length()).map { i ->
                 val p = ps.getJSONObject(i)
-                DraftPosting(p.optString("account"), p.optString("amount"), p.optString("commodity"), cost = p.optString("cost"))
+                DraftPosting(p.optString("account"), p.optString("amount"), p.optString("commodity"), p.optString("comment"),
+                    cost = p.optString("cost"), assertion = p.optString("assertion"))
             }.ifEmpty { listOf(DraftPosting(), DraftPosting()) },
         )
     }
