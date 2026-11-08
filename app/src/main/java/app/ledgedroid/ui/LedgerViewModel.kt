@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.UndoHistory
 import app.ledgedroid.core.TransactionPages
 import app.ledgedroid.core.TransactionOrder
 import app.ledgedroid.core.Intelligent
@@ -323,7 +324,7 @@ sealed interface Screen {
 }
 
 /** A message shown at the bottom of the screen, with an Undo button if the change can be undone. */
-data class Message(val text: String, val canUndo: Boolean = false, val id: Long = System.nanoTime())
+data class Message(val text: String, val canUndo: Boolean = false, val id: Long = System.nanoTime(), val canRedo: Boolean = false)
 
 sealed interface SaveState {
     data object Idle : SaveState
@@ -410,9 +411,24 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             }
     }
 
-    /** The last change made in the app, to undo it. Cleared when the journal is opened again or changes. */
-    @Volatile
-    private var undoRecord: Pair<Source, UndoRecord>? = null
+    /**
+     * The changes made in the app that can be undone, and those undone that can be redone, for the journal
+     * they were made to ([historySource]). Cleared when another journal is opened. Each step checks the file
+     * is exactly as the change left it, so a change made elsewhere since is never overwritten.
+     */
+    private val history = UndoHistory()
+    private var historySource: Source? = null
+    private val undoMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** What Undo and Redo would do now, for the menu: the changes' descriptions, and how many of each. */
+    data class UndoUi(val undo: String? = null, val redo: String? = null, val undoCount: Int = 0, val redoCount: Int = 0)
+
+    private val _undoUi = MutableStateFlow(UndoUi())
+    val undoUi: StateFlow<UndoUi> = _undoUi.asStateFlow()
+
+    private fun historyChanged() {
+        _undoUi.value = UndoUi(history.nextUndo?.description, history.nextRedo?.description, history.undoCount, history.redoCount)
+    }
 
     /** Tree rows the person has collapsed, keyed by report section and account name. */
     private val _collapsed = MutableStateFlow<Set<String>>(emptySet())
@@ -539,7 +555,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------ actions
 
     fun open(uri: Uri) {
-        undoRecord = null
+        history.clear()
+        historySource = null
+        historyChanged()
         val cr = getApplication<Application>().contentResolver
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -751,34 +769,54 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Show [text] after a change that [record] can undo. */
     private fun changed(src: Source, record: UndoRecord?, text: String) {
-        undoRecord = record?.let { src to it }
+        if (record != null) {
+            if (historySource != src) history.clear()
+            historySource = src
+            history.recorded(record)
+            historyChanged()
+        }
         _messages.value = Message(text, canUndo = record != null)
     }
 
     /** Put the journal back as it was before the last change made in the app. */
-    fun undo() {
-        val (src, record) = undoRecord ?: return
-        undoRecord = null
+    fun undo() = step(redo = false)
+
+    /** Make the last undone change again. */
+    fun redo() = step(redo = true)
+
+    /** Undo the newest change, or redo the newest undone one, after checking the file is as it left it. */
+    private fun step(redo: Boolean) {
+        val src = historySource ?: return
+        val record = (if (redo) history.nextRedo else history.nextUndo) ?: return
         _messages.value = null
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    when (src) {
-                        Source.None -> throw EntryException(NO_JOURNAL)
-
-                        is Source.File -> {
-                            val store = UriStore(getApplication<Application>().contentResolver, src.uri)
-                            UndoRecord.undo(store, record) { backups.saveRecovery(src.uri, it) }
-                            backupRun = null
-                            record.before.toString(Charsets.UTF_8)
+            if (!undoMutex.tryLock()) return@launch // one at a time
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        when (src) {
+                            Source.None -> throw EntryException(NO_JOURNAL)
+                            is Source.File -> {
+                                val store = UriStore(getApplication<Application>().contentResolver, src.uri)
+                                if (redo) UndoRecord.redo(store, record) { backups.saveRecovery(src.uri, it) }
+                                else UndoRecord.undo(store, record) { backups.saveRecovery(src.uri, it) }
+                                backupRun = null
+                                (if (redo) record.after else record.before).toString(Charsets.UTF_8)
+                            }
                         }
                     }
                 }
+                result.onSuccess { text ->
+                    if (redo) history.redone(record) else history.undone(record)
+                    historyChanged()
+                    // After an undo, the message offers Redo; after a redo, Undo.
+                    _messages.value = if (redo) Message("Redone: ${record.description}", canUndo = true)
+                    else Message("Undone: ${record.description}", canRedo = true)
+                    applyWritten(src, text)
+                }.onFailure { e -> _message.value = failureMessage(e, if (redo) "redo" else "undo") }
+            } finally {
+                undoMutex.unlock()
             }
-            result.onSuccess { text ->
-                _message.value = "Undone: ${record.description}"
-                applyWritten(src, text)
-            }.onFailure { e -> _message.value = failureMessage(e, "undo") }
         }
     }
 

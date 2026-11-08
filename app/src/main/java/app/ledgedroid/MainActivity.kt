@@ -1,5 +1,6 @@
 package app.ledgedroid
 
+import app.ledgedroid.ui.Message
 import app.ledgedroid.ui.AllTransactionsScreen
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
@@ -121,6 +122,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val intelligentFuzzy by vm.intelligentFuzzy.collectAsStateWithLifecycle()
     val intelligentDuplicates by vm.intelligentDuplicates.collectAsStateWithLifecycle()
     val headerCollapsed by vm.headerCollapsed.collectAsStateWithLifecycle()
+    val undoUi by vm.undoUi.collectAsStateWithLifecycle()
     val pinned by vm.pinned.collectAsStateWithLifecycle()
     val treeStyle by vm.treeStyle.collectAsStateWithLifecycle()
     val branchHues by vm.branchHues.collectAsStateWithLifecycle()
@@ -168,15 +170,15 @@ fun LedgerApp(vm: LedgerViewModel) {
     // effect on the message did, which could take a snackbar, and its Undo, away straight after showing it.
     // Only a newer message replaces the one showing.
     LaunchedEffect(Unit) {
-        vm.message.filterNotNull().collectLatest { m ->
+        vm.message.filterNotNull().collectLatest { m: Message ->
             vm.consumeMessage()
             val result = snackbar.showSnackbar(
                 m.text,
-                actionLabel = if (m.canUndo) "Undo" else null,
+                actionLabel = if (m.canUndo) "Undo" else if (m.canRedo) "Redo" else null,
                 withDismissAction = true,
-                duration = if (m.canUndo) SnackbarDuration.Long else SnackbarDuration.Short,
+                duration = if (m.canUndo || m.canRedo) SnackbarDuration.Long else SnackbarDuration.Short,
             )
-            if (result == SnackbarResult.ActionPerformed) vm.undo()
+            if (result == SnackbarResult.ActionPerformed) { if (m.canUndo) vm.undo() else if (m.canRedo) vm.redo() }
         }
     }
 
@@ -208,6 +210,9 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onSaveView = vm::saveView,
                     onAdd = { vm.startAdd() },
                     onRename = { renaming = it },
+                    undoUi = undoUi,
+                    onUndo = vm::undo,
+                    onRedo = vm::redo,
                     headerCollapsed = headerCollapsed,
                     onHeaderCollapsed = vm::setHeaderCollapsed,
                     onQuickAdd = { vm.startQuickAdd() },

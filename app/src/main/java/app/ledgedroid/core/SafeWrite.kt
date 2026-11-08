@@ -23,6 +23,72 @@ class UndoRecord(val description: String, val before: ByteArray, val after: Byte
             if (!now.contentEquals(record.after)) throw EntryException(CHANGED_SINCE)
             SafeWrite.replace(store, now, record.before, saveRecovery)
         }
+
+        const val CHANGED_SINCE_REDO =
+            "The journal has changed since that was undone, so it can't be redone here."
+
+        /** Redo [record] (undone before) on [store]: write [after] back, only if the file holds exactly [before]. */
+        fun redo(store: JournalStore, record: UndoRecord, saveRecovery: (ByteArray) -> String?) {
+            val now = try {
+                store.read()
+            } catch (e: Exception) {
+                throw EntryException("The journal couldn't be read, so nothing was redone.")
+            }
+            if (!now.contentEquals(record.before)) throw EntryException(CHANGED_SINCE_REDO)
+            SafeWrite.replace(store, now, record.after, saveRecovery)
+        }
+    }
+}
+
+/**
+ * The changes that can be undone, newest last, and those undone that can be redone. A new change can't be
+ * redone past, so it clears the redos. Each step keeps the whole file twice (before and after), so the
+ * history keeps at most [maxSteps] steps and [maxBytes] bytes in all, letting the oldest go first.
+ */
+class UndoHistory(private val maxSteps: Int = 20, private val maxBytes: Long = 16L * 1024 * 1024) {
+    private val undos = ArrayDeque<UndoRecord>()
+    private val redos = ArrayDeque<UndoRecord>()
+
+    /** The next change Undo would undo, and the next Redo would redo. */
+    val nextUndo: UndoRecord? get() = undos.lastOrNull()
+    val nextRedo: UndoRecord? get() = redos.lastOrNull()
+    val undoCount: Int get() = undos.size
+    val redoCount: Int get() = redos.size
+
+    /** A new change was made. */
+    fun recorded(r: UndoRecord) {
+        undos.addLast(r)
+        redos.clear()
+        trim()
+    }
+
+    /** [r], the next undo, was undone: it can be redone now. */
+    fun undone(r: UndoRecord) {
+        if (undos.lastOrNull() === r) undos.removeLast()
+        redos.addLast(r)
+        trim()
+    }
+
+    /** [r], the next redo, was redone: it can be undone again. */
+    fun redone(r: UndoRecord) {
+        if (redos.lastOrNull() === r) redos.removeLast()
+        undos.addLast(r)
+        trim()
+    }
+
+    fun clear() {
+        undos.clear()
+        redos.clear()
+    }
+
+    private fun size(r: UndoRecord) = r.before.size.toLong() + r.after.size
+    private fun trim() {
+        while (undos.size + redos.size > maxSteps || (undos + redos).sumOf { size(it) } > maxBytes) {
+            // The oldest undo goes first; then the redo furthest away.
+            if (undos.size > 1 || (undos.isNotEmpty() && redos.isEmpty())) undos.removeFirst()
+            else if (redos.size > 1) redos.removeFirst()
+            else break
+        }
     }
 }
 

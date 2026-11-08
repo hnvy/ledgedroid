@@ -138,7 +138,7 @@ class QuickAdd(
             "Payee",
             s.hints.payee,
             (if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note") +
-                    "; ; comment adds a comment",
+                    "; * or ! first marks it cleared or pending; ; comment adds a comment",
         )
         is QuickStep.Account -> {
             val entered = s.draft.postings.take(step.index)
@@ -176,8 +176,13 @@ class QuickAdd(
         else -> emptyList()
     }
 
-    /** Templates first (the first few when nothing's typed), then payees. */
-    private fun payeeCompletions(t: String, limit: Int): List<QuickCompletion> {
+    /** Templates first (the first few when nothing's typed), then payees; a typed status mark (* or !) is kept. */
+    private fun payeeCompletions(typed: String, limit: Int): List<QuickCompletion> {
+        val (mark, t) = splitStatus(typed).let { (status, rest) -> markOf(status) to rest }
+        return payeeCompletionsOf(t, limit).map { c -> if (mark.isEmpty()) c else c.copy(value = mark + c.value) }
+    }
+
+    private fun payeeCompletionsOf(t: String, limit: Int): List<QuickCompletion> {
         val fromTemplates = if (t.isEmpty()) templates.take(3) else templatesMatching(templates, t, 3)
         // Intelligent: whole descriptions, most used first, every word typed in them (as iadd).
         val payees = if (smart) descriptionsByUse.asSequence().filter { it != t && Intelligent.matches(t, it, fuzzy = false) }.take(limit).toList()
@@ -232,25 +237,27 @@ class QuickAdd(
             }
 
             QuickStep.Payee -> {
+                // * or ! first marks it cleared or pending, as in the journal: "* Corner Cafe".
+                val (status, unmarked) = splitStatus(given)
                 val template = chosen?.template?.takeIf { chosen.value == answer }
                 if (template != null) {
-                    val draft = template.draft.copy(date = s.draft.date)
+                    val draft = template.draft.copy(date = s.draft.date).let { d -> if (status != null) d.copy(status = status) else d }
                     return next(
                         s, s.copy(draft = draft.copy(postings = emptyList()), step = QuickStep.Account(0), template = template),
-                        "Template" to "${template.name}: ${draft.description.ifEmpty { "no payee" }}",
+                        "Template" to markOf(draft.status) + "${template.name}: ${draft.description.ifEmpty { "no payee" }}",
                     )
                 }
-                val (text, comment) = Intelligent.splitComment(given)
+                val (text, comment) = Intelligent.splitComment(unmarked)
                 val payee = text.substringBefore('|').trim()
                 val note = if ('|' in text) text.substringAfter('|').trim() else ""
-                val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment })
+                val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment }, status = status ?: s.draft.status)
                 Entry.check(draft.copy(postings = listOf(DraftPosting("a", "0"), DraftPosting("b", "0"))), styles)
                     .errors.firstOrNull { it.startsWith("The payee") || it.startsWith("The note") }
                     ?.let { return QuickResult.Problem(it) }
                 // Intelligent: the transaction to follow, for the accounts and amounts that come next.
                 val reference = if (smart) Intelligent.similar(journal!!, draft.description) else null
                 next(s, s.copy(draft = draft, step = QuickStep.Account(0), reference = reference),
-                    "Payee" to draft.description.ifEmpty { "(none)" } + (if (comment.isNotEmpty()) " ; $comment" else ""))
+                    "Payee" to markOf(draft.status) + draft.description.ifEmpty { "(none)" } + (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             is QuickStep.Account -> {
@@ -323,7 +330,9 @@ class QuickAdd(
         val t = text.trim()
         if (t.isEmpty() || (s.step != QuickStep.Payee && s.step !is QuickStep.Account)) return null
         val exact = when (s.step) {
-            QuickStep.Payee -> templates.any { it.name == t } || suggestions?.isKnownPayee(t) == true || (smart && t in descriptionsByUse)
+            QuickStep.Payee -> splitStatus(t).second.let { p ->
+                templates.any { it.name == p } || suggestions?.isKnownPayee(p) == true || (smart && p in descriptionsByUse)
+            }
             else -> suggestions?.isKnownAccount(t) == true
         }
         if (exact) return null
@@ -346,16 +355,13 @@ class QuickAdd(
         if (smart && checkDuplicates && s.step == QuickStep.Confirm) Intelligent.duplicateOf(journal!!, s.draft, styles) else null
 
     /**
-     * A number for a default amount, as the ".00" setting says: with [padDecimals], the commodity's usual
-     * decimals ($5.00); without, the decimals it has ($5, or $4.50 for an amount that had them).
+     * A number for a default amount, as the ".00" setting says: the commodity's usual decimals ($5.00, $1.20),
+     * except that without [padDecimals] a whole amount (with no decimals: $5) stays whole.
      */
     private fun number(q: BigDecimal, commodity: String): String {
         val st = styles.styleFor(commodity)
-        if (padDecimals) return Entry.amountInput(q, st)
-        // A worked-out sum can have a long tail: keep only the digits that matter then.
-        val exact = if (q.scale() > maxOf(st.precision, 2)) q.stripTrailingZeros() else q
-        val plain = (if (exact.scale() < 0) exact.setScale(0) else exact).toPlainString()
-        return if (st.decimalMark == ',') plain.replace('.', ',') else plain
+        if (padDecimals || q.scale() > 0) return Entry.amountInput(q, st)
+        return (if (q.scale() < 0) q.setScale(0) else q).toPlainString()
     }
 
     /** The state before the last answer, or null at the first prompt. */
@@ -433,6 +439,27 @@ class QuickAdd(
             if (before.isNotBlank() && after.isNotBlank()) return null
             val commodity = before.trim().ifEmpty { after.trim() }.ifEmpty { null }
             return (if (negative) "-$s" else s) to commodity
+        }
+
+        /**
+         * A status mark at the start of a payee answer, as hledger writes it: "* Corner Cafe" is cleared,
+         * "! Corner Cafe" pending. Returns the status (null if there's no mark) and the rest.
+         */
+        fun splitStatus(text: String): Pair<Status?, String> {
+            val t = text.trimStart()
+            val status = when {
+                t.startsWith("*") -> Status.CLEARED
+                t.startsWith("!") -> Status.PENDING
+                else -> return null to text.trim()
+            }
+            return status to t.substring(1).trim()
+        }
+
+        /** "* " or "! " for a status, as shown before the payee; "" for unmarked. */
+        fun markOf(status: Status?): String = when (status) {
+            Status.CLEARED -> "* "
+            Status.PENDING -> "! "
+            else -> ""
         }
 
         /**

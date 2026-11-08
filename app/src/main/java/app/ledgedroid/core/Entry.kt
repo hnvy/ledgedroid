@@ -54,9 +54,9 @@ data class AmountLayout(
     val spaces: Int = DEFAULT_SPACES,
     val column: Int = DEFAULT_COLUMN,
     /**
-     * Write amounts at the commodity's usual precision, padding whole ones ($4 as $4.00), as before. Off,
-     * they're written with the decimals they have: as typed, and a calculated one like those it's worked
-     * out from.
+     * Write amounts at the commodity's usual precision, padding whole ones ($4 as $4.00), as before. Off, a
+     * whole amount (no decimals: $4, or a calculated one from whole amounts) stays whole; amounts with
+     * decimals still get the usual ones ($4.5 is $4.50).
      */
     val padDecimals: Boolean = true,
 ) {
@@ -473,10 +473,10 @@ object Entry {
     internal fun formatExact(commodity: String, quantity: BigDecimal, styles: Styles, pad: Boolean = true): String {
         val st = styles.styleFor(commodity)
         val scale = quantity.stripTrailingZeros().scale().coerceAtLeast(0)
-        // Without padding: the decimals the amount has (4.50 stays 4.50, 4 stays 4); a long worked-out one
-        // is cut back to the digits that matter.
-        val precision = if (pad) maxOf(st.precision, scale)
-        else if (quantity.scale() in 0..maxOf(st.precision, scale)) quantity.scale() else scale
+        // Without padding, only a whole amount (written with no decimals: 100) stays whole; one with decimals
+        // gets the commodity's usual ones, as with padding (1.2 is 1.20), or more if it has more.
+        val whole = quantity.scale() <= 0
+        val precision = if (pad || !whole) maxOf(st.precision, scale) else 0
         val exact = st.copy(precision = precision, groupMark = null, groupSizes = emptyList())
         return Styles(mapOf(commodity to exact)).format(commodity, quantity)
     }

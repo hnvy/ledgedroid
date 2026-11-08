@@ -1089,7 +1089,7 @@ private fun AmountLayoutDialog(
                         Text("Write .00 on whole amounts", style = MaterialTheme.typography.bodyLarge)
                         Text(
                             if (layout.padDecimals) "\$4 is written \$4.00, the commodity's usual decimals"
-                            else "Amounts are written as typed: \$4 stays \$4, \$4.50 stays \$4.50",
+                            else "Whole amounts stay whole: \$4 stays \$4 (\$4.5 is still \$4.50)",
                             style = MaterialTheme.typography.bodySmall,
                             color = LocalLedgerColors.current.mutedInk,
                         )

@@ -135,6 +135,10 @@ fun BalanceScreen(
     onAdd: () -> Unit,
     /** Rename an account across the journal (from its long-press menu). */
     onRename: (String) -> Unit,
+    /** What Undo and Redo would do, for the menu. */
+    undoUi: LedgerViewModel.UndoUi = LedgerViewModel.UndoUi(),
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
     /** The chips above the report folded away, to see only the accounts. */
     headerCollapsed: Boolean = false,
     onHeaderCollapsed: (Boolean) -> Unit = {},
@@ -255,6 +259,24 @@ fun BalanceScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            // Undo and redo, step by step, naming the change (and how many more there are).
+                            DropdownMenuItem(
+                                text = {
+                                    Text(undoUi.undo?.let { "Undo: $it" + if (undoUi.undoCount > 1) " (${undoUi.undoCount - 1} more)" else "" } ?: "Undo",
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                },
+                                enabled = undoUi.undo != null,
+                                onClick = { menuOpen = false; onUndo() },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(undoUi.redo?.let { "Redo: $it" + if (undoUi.redoCount > 1) " (${undoUi.redoCount - 1} more)" else "" } ?: "Redo",
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                },
+                                enabled = undoUi.redo != null,
+                                onClick = { menuOpen = false; onRedo() },
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Open journal file…") },
                                 onClick = { menuOpen = false; onOpenFile() },
