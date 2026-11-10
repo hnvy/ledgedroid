@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import kotlinx.coroutines.flow.first
 import app.ledgedroid.core.UndoHistory
 import app.ledgedroid.core.TransactionPages
 import app.ledgedroid.core.TransactionOrder
@@ -356,6 +357,14 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * journal read. Kept between launches. Declared before anything reads a journal.
      */
     private val _accountTypes = MutableStateFlow(Store.readAccountTypes(prefs))
+
+    /**
+     * Lightweight mode: the journal has changed (a change made in the app) since it was last read, so the
+     * screens don't show it yet; ↻ (or Refresh) reads it. Declared before anything reads a journal, as
+     * reading clears it.
+     */
+    private val _stale = MutableStateFlow(false)
+    val stale: StateFlow<Boolean> = _stale.asStateFlow()
     val accountTypes: StateFlow<Map<String, AccountType>> = _accountTypes.asStateFlow()
 
     /** Set [account]'s type, or with null go back to the journal's own (or guessed) type. */
@@ -416,7 +425,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * they were made to ([historySource]). Cleared when another journal is opened. Each step checks the file
      * is exactly as the change left it, so a change made elsewhere since is never overwritten.
      */
-    private val history = UndoHistory()
+    private val history = UndoHistory(if (prefs.getBoolean(KEY_LIGHTWEIGHT, false)) LIGHT_UNDO_STEPS else UNDO_STEPS)
     private var historySource: Source? = null
     private val undoMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -575,9 +584,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reload() = load(source)
 
-    /** Re-read the file when returning to the app, so edits made elsewhere (or synced) show up. */
+    /**
+     * Re-read the file when returning to the app, so edits made elsewhere (or synced) show up. Not in
+     * Lightweight mode, where ↻ does it.
+     */
     fun onResume() {
-        if (source is Source.File && _load.value !is LoadState.Loading &&
+        if (!_lightweight.value && source is Source.File && _load.value !is LoadState.Loading &&
             SystemClock.elapsedRealtime() - lastLoadedAt > 2_000
         ) load(source, quiet = true)
         backUpIfDue()
@@ -1069,7 +1081,9 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     if (editing == null) appendTransaction(src, draft, styles, layout, timings, "added $what")
-                    else rewrite(src, "changes to $what", timings) { Entry.replace(it, editing, draft, styles, layout = layout) }
+                    else rewrite(src, "changes to $what", timings) {
+                        Entry.replace(it, editing, draft, styles, layout = layout, verify = !_lightweight.value)
+                    }
                 }
             }
             result.onSuccess { w ->
@@ -1138,6 +1152,24 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     fun setIntelligent(on: Boolean) {
         _intelligent.value = on
         prefs.edit().putBoolean(KEY_INTELLIGENT, on).apply()
+    }
+
+    /**
+     * Lightweight mode (Settings): leaves out work that slows older phones down, chiefly when adding and
+     * editing: the read-back check of a written transaction (the file is still written safely and compared),
+     * Intelligent mode's loose matching and duplicate check, the form's live preview and scrolling, the
+     * reminder check when the app opens, and a long undo history. Remembered.
+     */
+    private val _lightweight = MutableStateFlow(prefs.getBoolean(KEY_LIGHTWEIGHT, false))
+    val lightweight: StateFlow<Boolean> = _lightweight.asStateFlow()
+
+    fun setLightweight(on: Boolean) {
+        // Turned off with changes waiting: show them now.
+        if (!on && _stale.value) reload()
+        _lightweight.value = on
+        prefs.edit().putBoolean(KEY_LIGHTWEIGHT, on).apply()
+        history.maxSteps = if (on) LIGHT_UNDO_STEPS else UNDO_STEPS
+        historyChanged()
     }
 
     /** Intelligent mode's costly parts, each on unless turned off (for slower phones). Remembered. */
@@ -1276,6 +1308,12 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         if (src != source) return
         val name = (lastRead?.first) ?: return load(src, quiet = true)
         lastRead = name to text
+        // Lightweight mode: the journal isn't read again by itself (↻ does it). The text is kept, so changing
+        // a transaction still finds it as it is in the file, and the screens say what's waiting.
+        if (_lightweight.value) {
+            _stale.value = true
+            return
+        }
         loadJob?.cancel()
         val auto = autoOf(_options.value)
         loadJob = viewModelScope.launch {
@@ -1582,14 +1620,21 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         checkAlerts()
     }
 
-    /** Tell about anything due now (also done in the background). */
+    /** Tell about anything due now (also done in the background), with the journal as read if there is one. */
     fun checkAlerts() {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { Alerts.check(getApplication()) } }
+        val loaded = (_load.value as? LoadState.Loaded)?.journal
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Alerts.check(getApplication(), loaded = loaded) } }
     }
 
     init {
-        // Each time the app opens, as well as in the background.
-        checkAlerts()
+        // Each time the app opens (as well as in the background): once the journal is read, using it rather
+        // than reading and parsing it a second time. Lightweight mode leaves it to the background check.
+        viewModelScope.launch {
+            val journal = _load.first { it is LoadState.Loaded || it is LoadState.Failed || it is LoadState.NoJournal }
+            if (!_lightweight.value && journal is LoadState.Loaded) {
+                withContext(Dispatchers.IO) { runCatching { Alerts.check(getApplication(), loaded = journal.journal) } }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ sharing into quick add
@@ -1638,7 +1683,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 val before = readBytes(store)
                 val existing = before.toString(Charsets.UTF_8)
                 timings.step("read")
-                val added = Entry.addition(existing, draft, styles, layout = layout)
+                val added = Entry.addition(existing, draft, styles, layout = layout, verify = !_lightweight.value)
                 timings.step("check")
                 backUpBeforeChange(src, before, timings)
                 val addedBytes = added.toByteArray(Charsets.UTF_8)
@@ -1782,6 +1827,8 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun parse(name: String, text: String, src: Source, auto: Boolean): LoadState {
+        // Read afresh: anything waiting to be shown is shown now.
+        _stale.value = false
         return try {
             LoadState.Loaded(JournalParser(auto = auto).parse(text, includeResolver(src)).copy(assignedTypes = _accountTypes.value), name, src)
         } catch (e: JournalException) {
@@ -1986,12 +2033,48 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
         name?.let { n -> enumValues<E>().firstOrNull { it.name == n } } ?: default
 
+    // ------------------------------------------------------------------ landing screen
+
+    /** What the app opens on (Settings › Open on). */
+    enum class Landing(val label: String) {
+        ACCOUNTS("Accounts"),
+        ALL_TRANSACTIONS("All transactions"),
+        ADD("Add transaction"),
+        SAVED_REPORTS("Saved reports"),
+    }
+
+    private val _landing = MutableStateFlow(
+        Landing.entries.firstOrNull { it.name == prefs.getString(KEY_LANDING, null) } ?: Landing.ACCOUNTS
+    )
+    val landing: StateFlow<Landing> = _landing.asStateFlow()
+
+    fun setLanding(l: Landing) {
+        _landing.value = l
+        prefs.edit().putString(KEY_LANDING, l.name).apply()
+    }
+
+    init {
+        // On opening (not when the screen turns): the chosen screen, over Accounts, so Back goes there. Last in
+        // the class, so everything it uses is ready. A widget, shortcut or shared text opens what it asks for
+        // on top.
+        when (_landing.value) {
+            Landing.ACCOUNTS -> Unit
+            Landing.ALL_TRANSACTIONS -> if (source is Source.File) _screens.value = listOf(Screen.AllTransactions)
+            Landing.SAVED_REPORTS -> _screens.value = listOf(Screen.SavedViews)
+            Landing.ADD -> if (source is Source.File) startDefaultAdd()
+        }
+    }
+
     companion object {
         private const val KEY_URI = "journalUri"
         private const val KEY_QUICK_ADD = "quickAdd"
         private const val KEY_QUICK_ADD_FILL = "quickAddFill"
         private const val KEY_QUICK_ADD_SOLE = "quickAddEnterTakesOnly"
         private const val KEY_INTELLIGENT = "intelligentMode"
+        private const val KEY_LIGHTWEIGHT = "lightweightMode"
+        private const val KEY_LANDING = "landingScreen"
+        private const val UNDO_STEPS = 20
+        private const val LIGHT_UNDO_STEPS = 5
         private const val KEY_TX_PAGE_SIZE = "transactionsPageSize"
 
         /** How many transactions All transactions loads at a time, to choose from. */

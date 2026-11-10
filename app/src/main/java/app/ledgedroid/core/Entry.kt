@@ -495,7 +495,8 @@ object Entry {
         styles: Styles,
         today: LocalDate = LocalDate.now(),
         layout: AmountLayout = AmountLayout.DEFAULT,
-    ): String = existing + addition(existing, draft, styles, today, layout)
+        verify: Boolean = true,
+    ): String = existing + addition(existing, draft, styles, today, layout, verify)
 
     /**
      * The text to add to the end of [existing] for [draft]: a newline if the file doesn't end with one,
@@ -507,6 +508,8 @@ object Entry {
         styles: Styles,
         today: LocalDate = LocalDate.now(),
         layout: AmountLayout = AmountLayout.DEFAULT,
+        /** Parse the result back to check it reads as entered (Lightweight mode skips this). */
+        verify: Boolean = true,
     ): String {
         check(draft, styles).firstProblem?.let { throw EntryException(it) }
         val nl = newlineOf(existing)
@@ -521,7 +524,7 @@ object Entry {
         val startLine = 1 + countNewlines(existing) + countNewlines(sb.toString())
         sb.append(render(draft, styles, nl, layout)).append(nl)
         val added = sb.toString()
-        verify(existing + added, startLine, draft, styles, today, NOTHING_ADDED)
+        if (verify) verify(existing + added, startLine, draft, styles, today, NOTHING_ADDED)
         return added
     }
 
@@ -544,6 +547,8 @@ object Entry {
         styles: Styles,
         today: LocalDate = LocalDate.now(),
         layout: AmountLayout = AmountLayout.DEFAULT,
+        /** Parse the result back to check it reads as entered (Lightweight mode skips this). */
+        verify: Boolean = true,
     ): String {
         check(draft, styles).firstProblem?.let { throw EntryException(it) }
         val lines = checkUnchanged(existing, at)
@@ -551,7 +556,7 @@ object Entry {
         val text = existing.substring(0, lines.start(at.firstLine)) +
                 render(draft, styles, nl, layout) + nl +
                 existing.substring(lines.endWithNewline(at.lastLine))
-        verify(text, at.firstLine, draft, styles, today, NOTHING_CHANGED)
+        if (verify) verify(text, at.firstLine, draft, styles, today, NOTHING_CHANGED)
         return text
     }
 

@@ -67,13 +67,16 @@ object Alerts {
         )
     }
 
-    /** Read the journal and templates and tell about anything due. Returns how many notifications were posted. */
-    fun check(context: Context, today: LocalDate = LocalDate.now()): Int {
+    /**
+     * Read the journal and templates and tell about anything due. Returns how many notifications were posted.
+     * With [loaded], the journal the app has already read is used rather than reading and parsing it again.
+     */
+    fun check(context: Context, today: LocalDate = LocalDate.now(), loaded: app.ledgedroid.core.Journal? = null): Int {
         val s = settings(context)
         if (!s.any || !allowed(context)) return 0
         val p = prefs(context)
         val uri = p.getString("journalUri", null)?.let(Uri::parse)
-        val journal = uri?.let { u ->
+        val journal: app.ledgedroid.core.Journal? = loaded ?: uri?.let { u ->
             runCatching {
                 val text = context.contentResolver.openInputStream(u)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: return@runCatching null
                 JournalParser(today).parse(text, IncludeFolder.resolver(context, u))

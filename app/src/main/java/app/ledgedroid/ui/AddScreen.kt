@@ -158,6 +158,8 @@ fun AddScreen(
     similarTo: (String) -> Transaction? = { null },
     /** Intelligent: loose account matching (e:f:c), which can be turned off for slower phones. */
     fuzzy: Boolean = true,
+    /** Lightweight mode: no live preview (a button shows it) and no scrolling fields to the top. */
+    lightweight: Boolean = false,
     onSaveTemplate: (String) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -170,6 +172,7 @@ fun AddScreen(
     var choosingFields by remember { mutableStateOf(false) }
     // Intelligent mode: the transaction the accounts were filled in from, to say so under the payee.
     var filledFrom: Transaction? by remember { mutableStateOf<Transaction?>(null) }
+    var previewOpen: Boolean by remember { mutableStateOf(false) }
     var choosingLayout by remember { mutableStateOf(false) }
     val initial = remember { draft }
     // A hidden field shows while it has something in it, and then stays for as long as the form is open,
@@ -201,6 +204,7 @@ fun AddScreen(
     val tracker = remember { FieldTracker() }
     val density = LocalDensity.current
     LaunchedEffect(focused) {
+        if (lightweight) return@LaunchedEffect
         val key = focused ?: return@LaunchedEffect
         if (!tracker.knows(key)) return@LaunchedEffect
         delay(250) // the keyboard coming up changes the space first
@@ -279,7 +283,8 @@ fun AddScreen(
             )
         },
     ) { padding ->
-        CompositionLocalProvider(LocalFieldTracker provides tracker) {
+        // Lightweight mode: fields don't report where they are, which is work on every layout.
+        CompositionLocalProvider(LocalFieldTracker provides tracker.takeUnless { lightweight }) {
         Column(
             Modifier
                 .padding(padding)
@@ -400,7 +405,11 @@ fun AddScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            if (!templateMode && check.amountErrors.isEmpty()) Preview(draft, styles, amountLayout)
+            if (!templateMode && check.amountErrors.isEmpty()) {
+                // Lightweight mode: worked out only when asked for, not on every keystroke.
+                if (!lightweight || previewOpen) Preview(draft, styles, amountLayout)
+                else TextButton(onClick = { previewOpen = true }) { Text("Show how it will be written") }
+            }
             // Room below: clear of the round buttons, and while typing enough to scroll the last fields to
             // the top with their suggestions under them.
             Spacer(Modifier.height(if (imeVisible) (LocalConfiguration.current.screenHeightDp * 0.5f).dp else 160.dp))

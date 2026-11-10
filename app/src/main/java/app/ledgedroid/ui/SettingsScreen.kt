@@ -68,6 +68,12 @@ fun SettingsScreen(
     onQuickAdd: (Boolean) -> Unit,
     quickAddDefault: Boolean,
     onQuickAddDefault: (Boolean) -> Unit,
+    /** What the app opens on. */
+    landing: LedgerViewModel.Landing = LedgerViewModel.Landing.ACCOUNTS,
+    onLanding: (LedgerViewModel.Landing) -> Unit = {},
+    /** Lightweight mode: leave out work that slows older phones down. */
+    lightweight: Boolean = false,
+    onLightweight: (Boolean) -> Unit = {},
     /** Intelligent mode: hledger-iadd-like suggestions when adding. */
     intelligent: Boolean = false,
     onIntelligent: (Boolean) -> Unit = {},
@@ -107,6 +113,27 @@ fun SettingsScreen(
             Heading("Account types")
             AccountTypesSection(journal, onAccountType)
 
+            Heading("Opening")
+            ChoiceRow(
+                "Open on",
+                "The screen the app starts on. Back goes to Accounts; a widget, shortcut or shared text opens what it asks for.",
+                landing.label,
+                LedgerViewModel.Landing.entries.map { it.label to it },
+                onLanding,
+            )
+
+            Heading("Performance")
+            ToggleRow(
+                "Lightweight mode",
+                if (lightweight) "On: faster on older phones. The journal isn't read again by itself, after a change or on coming " +
+                        "back to the app: the refresh button does it. Saving skips reading the new transaction back as hledger would " +
+                        "(the file is still written safely and compared); Intelligent mode's loose matching and duplicate check, " +
+                        "the form's live preview and scrolling, and the reminder check on opening are off; Undo keeps 5 steps."
+                else "Leave out the work that slows older phones down, chiefly when adding and editing transactions.",
+                lightweight,
+                onLightweight,
+            )
+
             Heading("Adding transactions")
             ToggleRow(
                 "Quick add button",
@@ -142,6 +169,12 @@ fun SettingsScreen(
                         else "Off: suggestions have every word typed somewhere (food cof), which is quicker.",
                         intelligentFuzzy,
                         onIntelligentFuzzy,
+                    )
+                    if (lightweight) Text(
+                        "Lightweight mode (above) turns both of these off for now.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalLedgerColors.current.mutedInk,
+                        modifier = Modifier.padding(horizontal = 24.dp),
                     )
                     ToggleRow(
                         "Check for duplicates",

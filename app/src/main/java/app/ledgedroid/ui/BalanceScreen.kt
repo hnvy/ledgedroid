@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -135,6 +136,8 @@ fun BalanceScreen(
     onAdd: () -> Unit,
     /** Rename an account across the journal (from its long-press menu). */
     onRename: (String) -> Unit,
+    /** Lightweight mode: changes made in the app aren't shown yet (↻ reads the journal). */
+    stale: Boolean = false,
     /** What Undo and Redo would do, for the menu. */
     undoUi: LedgerViewModel.UndoUi = LedgerViewModel.UndoUi(),
     onUndo: () -> Unit = {},
@@ -251,7 +254,12 @@ fun BalanceScreen(
                             Icon(Icons.Default.Search, contentDescription = "Search transactions")
                         }
                         IconButton(onClick = onReload) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reload journal")
+                            // Lightweight mode: tinted while changes are waiting to be shown.
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = if (stale) "Reload journal (changes waiting)" else "Reload journal",
+                                tint = if (stale) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                            )
                         }
                     }
                     Box {
@@ -397,6 +405,8 @@ fun BalanceScreen(
                 is LoadState.Loaded -> {
                     val warnings = load.journal.warnings
                     if (warnings.isNotEmpty()) WarningBar(warnings) { showWarnings = true }
+                    // Lightweight mode: a change made here isn't shown until ↻.
+                    if (stale) StaleBar(onReload)
                     // The balance sheet and income statement leave out accounts without a type; say so.
                     val untyped = remember(load.journal) {
                         BranchColors.topLevels(load.journal).filter { load.journal.accountType(it) == null }
@@ -1430,6 +1440,28 @@ private fun UntypedBar(accounts: List<String>, onSetTypes: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = lc.mutedInk,
         )
+    }
+}
+
+/** Lightweight mode: the journal changed in the app and isn't read again by itself: Refresh reads it. */
+@Composable
+private fun StaleBar(onReload: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onReload)
+            .padding(start = 20.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.Refresh, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Changes not shown yet (Lightweight mode)",
+            style = MaterialTheme.typography.bodySmall,
+            color = LocalLedgerColors.current.mutedInk,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onReload) { Text("Refresh") }
     }
 }
 

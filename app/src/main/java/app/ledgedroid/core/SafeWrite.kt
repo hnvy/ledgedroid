@@ -45,7 +45,14 @@ class UndoRecord(val description: String, val before: ByteArray, val after: Byte
  * redone past, so it clears the redos. Each step keeps the whole file twice (before and after), so the
  * history keeps at most [maxSteps] steps and [maxBytes] bytes in all, letting the oldest go first.
  */
-class UndoHistory(private val maxSteps: Int = 20, private val maxBytes: Long = 16L * 1024 * 1024) {
+class UndoHistory(maxSteps: Int = 20, private val maxBytes: Long = 16L * 1024 * 1024) {
+    /** How many steps to keep; lowering it lets the oldest go at once. */
+    var maxSteps: Int = maxSteps
+        set(value) {
+            field = value.coerceAtLeast(1)
+            trim()
+        }
+
     private val undos = ArrayDeque<UndoRecord>()
     private val redos = ArrayDeque<UndoRecord>()
 
