@@ -217,9 +217,25 @@ and starts another.
 with Tab to cycle suggestions and Enter for defaults. Dates can be
 `11-02`, `yesterday` or `-3`.
 
-Transactions are appended in the journal's style; ⋮ › **Align amounts**
-or **Amount spacing…** changes the layout, and **Fields shown…** hides
-unused fields.
+The transaction is appended to the end of the journal file, after a
+blank line, in the journal's amount style, by default with the
+amounts' decimal marks lined up at column 53:
+
+    2026-10-27 Corner Cafe
+        expenses:food:coffee                          $4.50
+        assets:cash                                  $-4.50
+
+The form's ⋮ menu changes this: turning off **Align amounts** puts a set
+number of spaces after each account instead, and **Amount spacing…**
+sets the number of spaces (at least two, so hledger can tell where the
+account name ends) or the column, with a preview. **Write .00 on whole
+amounts** (on by default) writes amounts at the commodity's usual
+decimals, so `4` becomes `$4.00`; turned off, a whole amount (typed
+with no decimals) stays whole, `$4`, while one with decimals still
+gets the usual ones, `1.2` is `$1.20` (more decimals than usual are
+kept). A calculated amount follows the same rule: whole if worked out
+from whole amounts. Editing a transaction, and quick add, write it the
+same way.
 
 Tap a transaction to **Edit**, **Delete** or mark it **Pending** /
 **Cleared**. Transactions with features the form can't represent (codes,
@@ -246,6 +262,35 @@ balances with `$-99`).
     prices. In Intelligent mode, a followed transaction's price comes
     with its amount. **Fields shown…** can hide the Add a price link; a
     price that's given always shows.
+
+**Balance assertions** (`= $1,234.56`, and hledger's `==`, `=*`, `==*`)
+work the same way: **= Assertion** under an amount in the form, or after
+the amount (and price) in quick add, `$-12 = $943.00`. They're written
+after the amount and price, read back to check, and transactions with
+them can be edited. hledger checks them when it reads the journal; one
+that doesn't hold shows as a warning (and in Journal health). An
+assertion needs an amount written: without one, hledger would work the
+amount out from it (a balance assignment), which the form doesn't do.
+
+**Comments on accounts**: **; Comment** under an account in the form, or
+`account ; comment` / `amount ; comment`in quick add, in any mode,
+puts a comment on that posting's line (`payee ; comment` puts one on
+the transaction). Editing a transaction shows the comments it has.
+
+Under each posting, the links **@ Price · = Assertion · ; Comment** open
+those fields; one that's filled in always shows, and **Fields shown…**
+can hide each link.
+
+To change or remove a transaction, tap it in an account's transaction
+list, then **Edit** or **Delete**.  Editing rewrites only that
+transaction's lines, in the format above, and deleting removes them
+(and a blank line they leave doubled). Both refuse if the
+transaction's lines have changed in the file since it was read, eg by
+a sync, so reload first. Transactions with things the form can't
+represent (codes, secondary dates, balance assignments (`=` with no
+amount), virtual postings, per-posting status, lot prices, comments on
+several lines) can't be edited in the app, and nothing can be changed
+while auto postings are shown.
 
 ### **Intelligent mode**
 
