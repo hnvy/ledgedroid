@@ -425,7 +425,10 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * they were made to ([historySource]). Cleared when another journal is opened. Each step checks the file
      * is exactly as the change left it, so a change made elsewhere since is never overwritten.
      */
-    private val history = UndoHistory(if (prefs.getBoolean(KEY_LIGHTWEIGHT, false)) LIGHT_UNDO_STEPS else UNDO_STEPS)
+    private val history = UndoHistory(
+        if (prefs.getBoolean(KEY_LIGHTWEIGHT, false) && LightPart.SHORT_UNDO.name !in prefs.getStringSet(KEY_LIGHT_OFF, null).orEmpty())
+            LIGHT_UNDO_STEPS else UNDO_STEPS
+    )
     private var historySource: Source? = null
     private val undoMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -589,7 +592,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
      * Lightweight mode, where ↻ does it.
      */
     fun onResume() {
-        if (!_lightweight.value && source is Source.File && _load.value !is LoadState.Loading &&
+        if (!light(LightPart.MANUAL_REFRESH) && source is Source.File && _load.value !is LoadState.Loading &&
             SystemClock.elapsedRealtime() - lastLoadedAt > 2_000
         ) load(source, quiet = true)
         backUpIfDue()
@@ -1082,7 +1085,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching {
                     if (editing == null) appendTransaction(src, draft, styles, layout, timings, "added $what")
                     else rewrite(src, "changes to $what", timings) {
-                        Entry.replace(it, editing, draft, styles, layout = layout, verify = !_lightweight.value)
+                        Entry.replace(it, editing, draft, styles, layout = layout, verify = !light(LightPart.SKIP_READ_BACK))
                     }
                 }
             }
@@ -1164,11 +1167,41 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     val lightweight: StateFlow<Boolean> = _lightweight.asStateFlow()
 
     fun setLightweight(on: Boolean) {
-        // Turned off with changes waiting: show them now.
-        if (!on && _stale.value) reload()
         _lightweight.value = on
         prefs.edit().putBoolean(KEY_LIGHTWEIGHT, on).apply()
-        history.maxSteps = if (on) LIGHT_UNDO_STEPS else UNDO_STEPS
+        lightChanged()
+    }
+
+    /** Lightweight mode's parts, each of which can be turned off on its own (Settings, under Lightweight mode). */
+    enum class LightPart(val label: String, val detail: String) {
+        MANUAL_REFRESH("Refresh by hand", "The journal isn't read again by itself, after a change or on coming back to the app: the refresh button does it."),
+        SKIP_READ_BACK("Skip the read-back check", "After writing a transaction, don't go through the journal again to check it reads back as entered (the file is still written safely and compared)."),
+        INTELLIGENT("Lighter Intelligent mode", "Intelligent mode's loose matching and duplicate check are off (it still follows similar transactions)."),
+        FORM("Simpler form", "No live preview of the transaction (a button shows it), and fields aren't scrolled to the top."),
+        OPENING_CHECK("No reminder check on opening", "Reminders are checked in the background only."),
+        SHORT_UNDO("Shorter undo history", "Undo keeps the last 5 changes rather than 20."),
+    }
+
+    /** The parts turned off; the others are in effect while Lightweight mode is on. Remembered. */
+    private val _lightOff = MutableStateFlow(
+        prefs.getStringSet(KEY_LIGHT_OFF, null).orEmpty().mapNotNull { n -> LightPart.entries.firstOrNull { it.name == n } }.toSet()
+    )
+    val lightOff: StateFlow<Set<LightPart>> = _lightOff.asStateFlow()
+
+    /** Whether [part] is in effect: Lightweight mode on, and the part not turned off. */
+    private fun light(part: LightPart): Boolean = _lightweight.value && part !in _lightOff.value
+
+    fun setLightPart(part: LightPart, on: Boolean) {
+        val off = if (on) _lightOff.value - part else _lightOff.value + part
+        _lightOff.value = off
+        prefs.edit().putStringSet(KEY_LIGHT_OFF, off.map { it.name }.toSet()).apply()
+        lightChanged()
+    }
+
+    /** After Lightweight mode or one of its parts changed: changes waiting are shown, and Undo's limit set. */
+    private fun lightChanged() {
+        if (!light(LightPart.MANUAL_REFRESH) && _stale.value) reload()
+        history.maxSteps = if (light(LightPart.SHORT_UNDO)) LIGHT_UNDO_STEPS else UNDO_STEPS
         historyChanged()
     }
 
@@ -1310,7 +1343,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         lastRead = name to text
         // Lightweight mode: the journal isn't read again by itself (↻ does it). The text is kept, so changing
         // a transaction still finds it as it is in the file, and the screens say what's waiting.
-        if (_lightweight.value) {
+        if (light(LightPart.MANUAL_REFRESH)) {
             _stale.value = true
             return
         }
@@ -1631,7 +1664,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         // than reading and parsing it a second time. Lightweight mode leaves it to the background check.
         viewModelScope.launch {
             val journal = _load.first { it is LoadState.Loaded || it is LoadState.Failed || it is LoadState.NoJournal }
-            if (!_lightweight.value && journal is LoadState.Loaded) {
+            if (!light(LightPart.OPENING_CHECK) && journal is LoadState.Loaded) {
                 withContext(Dispatchers.IO) { runCatching { Alerts.check(getApplication(), loaded = journal.journal) } }
             }
         }
@@ -1683,7 +1716,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
                 val before = readBytes(store)
                 val existing = before.toString(Charsets.UTF_8)
                 timings.step("read")
-                val added = Entry.addition(existing, draft, styles, layout = layout, verify = !_lightweight.value)
+                val added = Entry.addition(existing, draft, styles, layout = layout, verify = !light(LightPart.SKIP_READ_BACK))
                 timings.step("check")
                 backUpBeforeChange(src, before, timings)
                 val addedBytes = added.toByteArray(Charsets.UTF_8)
@@ -2072,6 +2105,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_QUICK_ADD_SOLE = "quickAddEnterTakesOnly"
         private const val KEY_INTELLIGENT = "intelligentMode"
         private const val KEY_LIGHTWEIGHT = "lightweightMode"
+        private const val KEY_LIGHT_OFF = "lightweightPartsOff"
         private const val KEY_LANDING = "landingScreen"
         private const val UNDO_STEPS = 20
         private const val LIGHT_UNDO_STEPS = 5

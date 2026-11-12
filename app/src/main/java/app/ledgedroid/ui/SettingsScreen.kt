@@ -71,9 +71,11 @@ fun SettingsScreen(
     /** What the app opens on. */
     landing: LedgerViewModel.Landing = LedgerViewModel.Landing.ACCOUNTS,
     onLanding: (LedgerViewModel.Landing) -> Unit = {},
-    /** Lightweight mode: leave out work that slows older phones down. */
+    /** Lightweight mode: leave out work that slows older phones down; and its parts turned off. */
     lightweight: Boolean = false,
     onLightweight: (Boolean) -> Unit = {},
+    lightOff: Set<LedgerViewModel.LightPart> = emptySet(),
+    onLightPart: (LedgerViewModel.LightPart, Boolean) -> Unit = { _, _ -> },
     /** Intelligent mode: hledger-iadd-like suggestions when adding. */
     intelligent: Boolean = false,
     onIntelligent: (Boolean) -> Unit = {},
@@ -125,14 +127,20 @@ fun SettingsScreen(
             Heading("Performance")
             ToggleRow(
                 "Lightweight mode",
-                if (lightweight) "On: faster on older phones. The journal isn't read again by itself, after a change or on coming " +
-                        "back to the app: the refresh button does it. Saving skips reading the new transaction back as hledger would " +
-                        "(the file is still written safely and compared); Intelligent mode's loose matching and duplicate check, " +
-                        "the form's live preview and scrolling, and the reminder check on opening are off; Undo keeps 5 steps."
-                else "Leave out the work that slows older phones down, chiefly when adding and editing transactions.",
+                if (lightweight) "On: faster on older phones, leaving out the parts below that are ticked. Each can be turned off."
+                else "Leave out the work that slows older phones down, chiefly when adding and editing transactions. " +
+                        "Each part can be chosen once it's on.",
                 lightweight,
                 onLightweight,
             )
+            // Each part on its own, while Lightweight mode is on.
+            if (lightweight) {
+                Column(Modifier.padding(start = 16.dp)) {
+                    LedgerViewModel.LightPart.entries.forEach { part ->
+                        ToggleRow(part.label, part.detail, part !in lightOff) { on -> onLightPart(part, on) }
+                    }
+                }
+            }
 
             Heading("Adding transactions")
             ToggleRow(
@@ -170,7 +178,7 @@ fun SettingsScreen(
                         intelligentFuzzy,
                         onIntelligentFuzzy,
                     )
-                    if (lightweight) Text(
+                    if (lightweight && LedgerViewModel.LightPart.INTELLIGENT !in lightOff) Text(
                         "Lightweight mode (above) turns both of these off for now.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalLedgerColors.current.mutedInk,

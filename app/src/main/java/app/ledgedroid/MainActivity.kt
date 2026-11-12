@@ -123,6 +123,10 @@ fun LedgerApp(vm: LedgerViewModel) {
     val intelligentDuplicates by vm.intelligentDuplicates.collectAsStateWithLifecycle()
     val headerCollapsed by vm.headerCollapsed.collectAsStateWithLifecycle()
     val lightweight by vm.lightweight.collectAsStateWithLifecycle()
+    val lightOff by vm.lightOff.collectAsStateWithLifecycle()
+    // Lightweight mode's parts in effect: the mode on, and that part not turned off.
+    val lightIntelligent = lightweight && LedgerViewModel.LightPart.INTELLIGENT !in lightOff
+    val lightForm = lightweight && LedgerViewModel.LightPart.FORM !in lightOff
     val stale by vm.stale.collectAsStateWithLifecycle()
     val landing by vm.landing.collectAsStateWithLifecycle()
     val undoUi by vm.undoUi.collectAsStateWithLifecycle()
@@ -263,7 +267,8 @@ fun LedgerApp(vm: LedgerViewModel) {
             Screen.AllTransactions -> {
                 BackHandler(onBack = vm::back)
                 val allTx by vm.allTx.collectAsStateWithLifecycle()
-                LaunchedEffect(Unit) { vm.ensureAllTx() }
+                // Again once the journal is read: opening straight on this screen (Settings › Open on), it isn't yet.
+                LaunchedEffect(journal) { vm.ensureAllTx() }
                 AllTransactionsScreen(
                     journal = journal,
                     ui = allTx,
@@ -395,6 +400,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onQuickAddEnterTakesOnly = vm::setQuickAddEnterTakesOnly,
                     lightweight = lightweight,
                     onLightweight = vm::setLightweight,
+                    lightOff = lightOff,
+                    onLightPart = vm::setLightPart,
                     landing = landing,
                     onLanding = vm::setLanding,
                     intelligent = intelligent,
@@ -471,8 +478,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                         onSave = { another -> vm.saveTransaction(another) },
                         intelligent = intelligent,
                         similarTo = vm::similarTo,
-                        fuzzy = intelligentFuzzy && !lightweight,
-                        lightweight = lightweight,
+                        fuzzy = intelligentFuzzy && !lightIntelligent,
+                        lightweight = lightForm,
                         onSaveTemplate = vm::saveTemplate,
                         onClose = vm::back,
                     )
@@ -508,8 +515,8 @@ fun LedgerApp(vm: LedgerViewModel) {
                         intelligent = intelligent,
                         journal = journal,
                         // Lightweight mode turns Intelligent mode's costly parts off.
-                        fuzzy = intelligentFuzzy && !lightweight,
-                        checkDuplicates = intelligentDuplicates && !lightweight,
+                        fuzzy = intelligentFuzzy && !lightIntelligent,
+                        checkDuplicates = intelligentDuplicates && !lightIntelligent,
                         padDecimals = amountLayout.padDecimals,
                         enterTakesOnly = quickAddEnterTakesOnly,
                         onSave = vm::saveQuick,
