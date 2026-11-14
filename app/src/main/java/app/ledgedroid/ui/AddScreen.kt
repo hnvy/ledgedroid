@@ -118,6 +118,7 @@ enum class FormField(val label: String, val description: String) {
     TEMPLATE("Template", "The box at the top for filling the form from a template"),
     STATUS("Status", "Unmarked, pending ! or cleared *"),
     NOTE("Note", "Written after the payee as payee | note"),
+    CODE("Code", "\"(…) Code\" under the note, for a reference written after the date, as (A1B2C3)"),
     CURRENCY("Currency", "Hidden, every amount gets the journal's usual currency"),
     COMMENT("Comment", "A comment or tags on the transaction"),
     PRICE("Prices", "\"@ Price\" under each amount, for @ or @@ prices (other currencies, shares)"),
@@ -173,6 +174,7 @@ fun AddScreen(
     // Intelligent mode: the transaction the accounts were filled in from, to say so under the payee.
     var filledFrom: Transaction? by remember { mutableStateOf<Transaction?>(null) }
     var previewOpen: Boolean by remember { mutableStateOf(false) }
+    var codeOpen: Boolean by remember { mutableStateOf(false) }
     var choosingLayout by remember { mutableStateOf(false) }
     val initial = remember { draft }
     // A hidden field shows while it has something in it, and then stays for as long as the form is open,
@@ -181,6 +183,7 @@ fun AddScreen(
     val withValues = buildSet {
         if (draft.status != Status.UNMARKED) add(FormField.STATUS)
         if (draft.note.isNotBlank()) add(FormField.NOTE)
+        if (draft.code.isNotBlank()) add(FormField.CODE)
         if (draft.comment.isNotBlank()) add(FormField.COMMENT)
         if (suggestions != null && draft.postings.any { it.commodity.trim() != defaultCommodity }) add(FormField.CURRENCY)
         if (draft.postings.any { it.cost.isNotBlank() }) add(FormField.PRICE)
@@ -354,6 +357,23 @@ fun AddScreen(
                     imeAction = ImeAction.Next
                 ),
             )
+
+            // hledger's code: a reference after the date, eg a cheque or transfer number. Shown when there is one
+            // or it's asked for.
+            if (draft.code.isNotBlank() || codeOpen) OutlinedTextField(
+                value = draft.code,
+                onValueChange = { v -> onChange { it.copy(code = v) } },
+                label = { Text("Code (optional)") },
+                supportingText = { Text(check.errors.firstOrNull { it.startsWith("The code") } ?: "A reference, written after the date as (A1B2C3)") },
+                isError = check.errors.any { it.startsWith("The code") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            ) else if (shows(FormField.CODE)) {
+                TextButton(onClick = { codeOpen = true }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text("(…) Code", style = MaterialTheme.typography.labelMedium)
+                }
+            }
 
             Text("Accounts", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
             draft.postings.forEachIndexed { i, p ->

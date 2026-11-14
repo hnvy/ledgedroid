@@ -1,5 +1,8 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.LookupTarget
+import app.ledgedroid.core.LookupTable
+import app.ledgedroid.core.LookupEntry
 import android.content.SharedPreferences
 import app.ledgedroid.core.AccountListMode
 import app.ledgedroid.core.AccountType
@@ -29,6 +32,7 @@ internal object Store {
     private const val KEY_BUDGET_EXAMPLE_REMOVED = "budgetExampleRemoved"
     private const val KEY_ACCOUNT_TYPES = "accountTypes"
     private const val KEY_SHARE_PATTERNS = "sharePatterns"
+    private const val KEY_LOOKUP_TABLES = "lookupTables"
 
     /** Account types set in Settings, by account name. */
     fun readAccountTypes(prefs: SharedPreferences): Map<String, AccountType> {
@@ -69,12 +73,36 @@ internal object Store {
     /** The person's patterns for reading shared text (Settings › Share patterns), in the order tried. */
     fun readSharePatterns(prefs: SharedPreferences): List<SharePattern> = readList(prefs, KEY_SHARE_PATTERNS) { o ->
         SharePattern(o.getString("id"), o.getString("name"), o.getString("regex"),
-            o.optString("templateId").ifEmpty { null }, o.optBoolean("enabled", true))
+            o.optString("templateId").ifEmpty { null }, o.optBoolean("enabled", true), o.optBoolean("moneyIn", false))
     }
 
     fun writeSharePatterns(prefs: SharedPreferences, patterns: List<SharePattern>) =
         writeList(prefs, KEY_SHARE_PATTERNS, patterns) { p ->
-            JSONObject().put("id", p.id).put("name", p.name).put("regex", p.regex).put("templateId", p.templateId ?: "").put("enabled", p.enabled)
+            JSONObject().put("id", p.id).put("name", p.name).put("regex", p.regex).put("templateId", p.templateId ?: "").put("enabled", p.enabled).put("moneyIn", p.moneyIn)
+        }
+
+    /** Lookup tables for share patterns: a captured value to the account it means. */
+    fun readLookupTables(prefs: SharedPreferences): List<LookupTable> = readList(prefs, KEY_LOOKUP_TABLES) { o ->
+        val rows = o.optJSONArray("entries")
+        val targetName: String = o.optString("target")
+        val target: LookupTarget = LookupTarget.entries.firstOrNull { it.name == targetName } ?: LookupTarget.ACCOUNT2
+        val entries: List<LookupEntry> = (0 until (rows?.length() ?: 0)).map { i ->
+            val r = rows!!.getJSONObject(i)
+            val value: String = r.optString("value")
+            val account: String = r.optString("account")
+            LookupEntry(value, account)
+        }
+        val id: String = o.getString("id")
+        val name: String = o.optString("name")
+        val group: String = o.optString("group")
+        val enabled: Boolean = o.optBoolean("enabled", true)
+        LookupTable(id, name, group, target, entries, enabled)
+    }
+
+    fun writeLookupTables(prefs: SharedPreferences, tables: List<LookupTable>) =
+        writeList(prefs, KEY_LOOKUP_TABLES, tables) { t ->
+            JSONObject().put("id", t.id).put("name", t.name).put("group", t.group).put("target", t.target.name).put("enabled", t.enabled)
+                .put("entries", org.json.JSONArray().apply { t.entries.forEach { put(JSONObject().put("value", it.value).put("account", it.account)) } })
         }
 
     /**

@@ -18,19 +18,67 @@ data class SharePattern(
     val regex: String,
     val templateId: String? = null,
     val enabled: Boolean = true,
+    /**
+     * The messages it reads are money in (a refund, a salary credited): the amount goes in negative, so the
+     * first account (eg income:salary) gives and the second (the bank) receives. A credit group flips this.
+     */
+    val moneyIn: Boolean = false,
 ) {
     /** What's wrong with [regex], or null. */
     val problem: String?
         get() = try {
             Pattern.compile(regex, Pattern.CASE_INSENSITIVE)
-            if (GROUPS.none { regex.contains("(?<$it>") }) "Name at least one group, eg (?<amount>[0-9.,]+)" else null
+            if (GROUPS.none { regex.contains("(?<$it>") } && tagGroups(regex).isEmpty()) "Name at least one group, eg (?<amount>[0-9.,]+)" else null
         } catch (e: PatternSyntaxException) {
             e.description + (if (e.index >= 0) " (at ${e.index + 1})" else "")
         }
 
     companion object {
-        val GROUPS = listOf("amount", "currency", "payee", "date", "account")
+        /**
+         * The groups a pattern can name: what goes in each part of the transaction. Besides these, a group named
+         * tag and a name, like (?<tagCard>[0-9]{4}), becomes the tag card:1234.
+         */
+        val GROUPS = listOf("amount", "currency", "payee", "date", "account", "account2", "note", "comment", "tags", "code", "status", "credit")
+
+        /** The tag groups in [regex], as (group name, tag name): tagCard → card. */
+        fun tagGroups(regex: String): List<Pair<String, String>> =
+            Regex("\\(\\?<(tag[A-Z][A-Za-z0-9]*)>").findAll(regex).map { m ->
+                val g = m.groupValues[1]
+                g to g.removePrefix("tag").replaceFirstChar { it.lowercase() }
+            }.distinct().toList()
     }
+}
+
+/** Which account a lookup table fills. */
+enum class LookupTarget(val label: String) {
+    ACCOUNT("Account 1"),
+    ACCOUNT2("Account 2"),
+}
+
+/** One row of a lookup table: a captured [value] (eg a card's last four digits) and the [account] it means. */
+data class LookupEntry(val value: String, val account: String)
+
+/**
+ * A lookup table (Settings › Share patterns): the value a pattern's [group] captured (any named group, eg
+ * (?<card>[0-9]{4}) or a tag group like tagCard) is looked up in [entries], and the account found fills
+ * [target]. One pattern can then serve every card at a bank, each with its own paying account. Values match
+ * ignoring case and spaces, whole: a row 21 doesn't match the card 4821.
+ */
+data class LookupTable(
+    val id: String,
+    val name: String,
+    val group: String,
+    val target: LookupTarget = LookupTarget.ACCOUNT2,
+    val entries: List<LookupEntry> = emptyList(),
+    val enabled: Boolean = true,
+) {
+    /** The account for [value], or null. */
+    fun find(value: String): String? {
+        val v = key(value)
+        return entries.firstOrNull { key(it.value) == v && it.account.isNotBlank() }?.account?.trim()
+    }
+
+    private fun key(s: String) = s.filterNot { it.isWhitespace() }.lowercase(Locale.ROOT)
 }
 
 /** What was picked out of shared text, and by what ([matchedBy]: a pattern's name, or null for built-in). */
@@ -43,14 +91,50 @@ data class SharedEntry(
     val account: String? = null,
     val templateId: String? = null,
     val matchedBy: String? = null,
+    /** What goes after the payee's |. */
+    val note: String? = null,
+    /** A comment, and tags (card:1234), for the transaction's comment. */
+    val comment: String? = null,
+    val tags: List<String> = emptyList(),
+    /** The reference, written as hledger's code: (A1B2C3). */
+    val code: String? = null,
+    val status: Status? = null,
+    /** The second account: where the money came from or went, eg assets:bank. */
+    val account2: String? = null,
+    /** Money in (a refund, credited): the first amount goes in negative. */
+    val moneyIn: Boolean = false,
+    /** Every named group's value, by group name, for lookup tables. */
+    val captured: Map<String, String> = emptyMap(),
+    /** The lookups that filled an account, to show: "card 4821 → liabilities:visa". */
+    val lookedUp: List<String> = emptyList(),
 ) {
-    val found: Boolean get() = date != null || payee != null || amount != null || account != null || templateId != null
+    val found: Boolean
+        get() = date != null || payee != null || amount != null || account != null || templateId != null || note != null ||
+                comment != null || tags.isNotEmpty() || code != null || status != null || account2 != null
 
-    /** As quick add's defaults; the amount with its currency, eg $4.50. */
-    fun hints(): QuickHints = QuickHints(date, payee, account, amount?.let { a ->
-        val c = commodity.orEmpty()
-        if (c.isEmpty()) a else if (c.length == 1 && !c[0].isLetter()) "$c$a" else "$a $c"
-    })
+    /** The comment and tags together, as they'd be written after ;. */
+    val commentText: String? get() = listOfNotNull(comment, tags.joinToString(", ").ifEmpty { null }).joinToString(", ").ifEmpty { null }
+
+    /** The amount as quick add takes it, with its currency and direction: $4.50, or $-4.50 for money in. */
+    val signedAmount: String?
+        get() = amount?.let { a ->
+            val signed = if (!moneyIn) a else if (a.startsWith("-")) a.removePrefix("-") else "-$a"
+            val c = commodity.orEmpty()
+            if (c.isEmpty()) signed else if (c.length == 1 && !c[0].isLetter()) "$c$signed" else "$signed $c"
+        }
+
+    /**
+     * As quick add's defaults. The status, code, note and comment go into the payee's default the way they're
+     * typed there ("* (A1B2C3) Corner Cafe | latte ; card:1234"), so quick add reads them as usual.
+     */
+    fun hints(): QuickHints {
+        val before = QuickAdd.markOf(status) + (code?.let { "($it) " } ?: "")
+        val payeeText = listOfNotNull(
+            (before + payee.orEmpty() + (note?.let { " | $it" } ?: "")).trim().ifEmpty { null },
+            commentText?.let { "; $it" },
+        ).joinToString(" ").ifEmpty { null }
+        return QuickHints(date, payeeText, account, signedAmount, account2)
+    }
 }
 
 /**
@@ -68,19 +152,31 @@ object ShareParse {
         "\\b(?:at|to|from|@)\\s+(?<payee>[\\p{L}\\p{N}][\\p{L}\\p{N}&'.\\- ]{1,40}?)(?=\\s+(?:on|for|via|using|ref|with|card|ending|at)\\b|\\s*[,;:\\n]|\\.(?:\\s|$)|$)",
         Pattern.CASE_INSENSITIVE,
     )
+    private val CREDIT_WORDS = Pattern.compile("\\b(credited|refund(ed)?|received|deposit(ed)?|reversed|reversal|cashback)\\b", Pattern.CASE_INSENSITIVE)
+    private val CARD = Pattern.compile("(?:card|a/c|account)\\b[^0-9\\n]{0,20}?(?:ending(?: in)?|x{2,}|\\*{2,})\\s*([0-9]{4})\\b", Pattern.CASE_INSENSITIVE)
+    private val REFERENCE = Pattern.compile("\\b(?:ref(?:erence)?|txn|transaction id)\\.?\\s*(?:no\\.?|number|#|:)?\\s*([A-Z0-9][A-Z0-9-]{3,})\\b", Pattern.CASE_INSENSITIVE)
     private val ISO = Pattern.compile("\\b(?<y>\\d{4})[-/.](?<m>\\d{1,2})[-/.](?<d>\\d{1,2})\\b")
     private val NUMERIC = Pattern.compile("\\b(?<a>\\d{1,2})[-/.](?<b>\\d{1,2})(?:[-/.](?<y>\\d{2,4}))?\\b")
     private val NAMED = Pattern.compile(
         "\\b(?:(?<d1>\\d{1,2})(?:st|nd|rd|th)?[ -]?(?<m1>[A-Za-z]{3,9})|(?<m2>[A-Za-z]{3,9})[ -]?(?<d2>\\d{1,2})(?:st|nd|rd|th)?)(?:,?[ -]?(?<y>\\d{4}|\\d{2}))?\\b",
     )
 
-    fun parse(text: String, patterns: List<SharePattern>, today: LocalDate, commodities: Collection<String> = emptyList()): SharedEntry {
+    fun parse(
+        text: String,
+        patterns: List<SharePattern>,
+        today: LocalDate,
+        commodities: Collection<String> = emptyList(),
+        /** Lookup tables to fill accounts from captured values (none when they're turned off). */
+        lookups: List<LookupTable> = emptyList(),
+    ): SharedEntry {
         for (p in patterns) {
             if (!p.enabled || p.problem != null) continue
             val m = Pattern.compile(p.regex, Pattern.CASE_INSENSITIVE).matcher(text)
             if (!m.find()) continue
             val cur = group(m, "currency")
-            return SharedEntry(
+            // A credit group that matched (CR, credited…) turns the pattern's direction round.
+            val credited = group(m, "credit") != null
+            return applyLookups(SharedEntry(
                 text = text,
                 date = group(m, "date")?.let { parseDate(it, today) },
                 payee = group(m, "payee")?.let(::tidy),
@@ -89,9 +185,42 @@ object ShareParse {
                 account = group(m, "account")?.trim(),
                 templateId = p.templateId,
                 matchedBy = p.name,
-            )
+                note = group(m, "note")?.let(::tidy),
+                comment = group(m, "comment")?.trim(),
+                tags = listOfNotNull(group(m, "tags")?.trim()) +
+                        SharePattern.tagGroups(p.regex).mapNotNull { (g, tag) -> group(m, g)?.trim()?.let { "$tag:$it" } },
+                code = group(m, "code")?.trim()?.replace(")", ""),
+                status = group(m, "status")?.let(::statusOf),
+                account2 = group(m, "account2")?.trim(),
+                moneyIn = p.moneyIn != credited,
+                captured = groupNames(p.regex).mapNotNull { g -> group(m, g)?.trim()?.let { g to it } }.toMap(),
+            ), lookups)
         }
-        return builtIn(text, today, commodities)
+        return applyLookups(builtIn(text, today, commodities), lookups)
+    }
+
+    /** The named groups in [regex]: (?<card>…) gives card. */
+    fun groupNames(regex: String): List<String> =
+        Regex("\\(\\?<([A-Za-z][A-Za-z0-9]*)>").findAll(regex).map { it.groupValues[1] }.distinct().toList()
+
+    /**
+     * [e] with its accounts filled from the enabled [tables] whose group captured a value that's in them. A
+     * looked-up account replaces what was captured for it (so a pattern can capture a card straight into
+     * account2 and the table turns it into the account), and like anything captured, wins over a template's.
+     */
+    fun applyLookups(e: SharedEntry, tables: List<LookupTable>): SharedEntry {
+        var out = e
+        for (t in tables) {
+            if (!t.enabled) continue
+            val value = e.captured[t.group] ?: continue
+            val account = t.find(value) ?: continue
+            out = when (t.target) {
+                LookupTarget.ACCOUNT -> out.copy(account = account)
+                LookupTarget.ACCOUNT2 -> out.copy(account2 = account)
+            }
+            out = out.copy(lookedUp = out.lookedUp + "${t.group} $value → $account")
+        }
+        return out
     }
 
     /** The built-in reading: the amount (preferring one after "spent", "paid"…), the payee after at/to, a date. */
@@ -107,13 +236,32 @@ object ShareParse {
             }
             found
         }
+        val card = CARD.matcher(text).let { if (it.find()) it.group(1) else null }
+        // Money in when it says so (credited, refund…) and doesn't say it was spent.
+        val moneyIn = CREDIT_WORDS.matcher(text).find() && !KEYWORD.matcher(text).find()
         return SharedEntry(
             text = text,
             date = findDate(text, today),
             payee = payee,
             amount = chosen?.second?.let { number(it.second) },
             commodity = chosen?.second?.let { commodity(it.first, commodities) },
+            moneyIn = moneyIn,
+            // A card's last four digits, and a reference number, are worth keeping; the digits also as the card
+            // group, for a lookup table.
+            tags = listOfNotNull(card?.let { "card:$it" }),
+            code = REFERENCE.matcher(text).let { if (it.find()) it.group(1) else null },
+            captured = listOfNotNull(card?.let { "card" to it }).toMap(),
         )
+    }
+
+    /** A status as a message or a pattern's status group says it: * or cleared/posted, ! or pending. */
+    fun statusOf(s: String): Status? {
+        val t = s.trim().lowercase(Locale.ROOT)
+        return when {
+            t.startsWith("*") || t in setOf("cleared", "posted", "completed", "settled") -> Status.CLEARED
+            t.startsWith("!") || t in setOf("pending", "authorised", "authorized", "on hold") -> Status.PENDING
+            else -> null
+        }
     }
 
     /** The first date in [text] in a form shared messages use. */

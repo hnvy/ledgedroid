@@ -31,6 +31,8 @@ data class TransactionDraft(
     val note: String = "",
     val comment: String = "",
     val postings: List<DraftPosting> = listOf(DraftPosting(), DraftPosting()),
+    /** hledger's code: a reference written in brackets after the date (and status), eg a cheque number. */
+    val code: String = "",
 ) {
     /** hledger's description: "payee | note", or just the payee. */
     val description: String
@@ -141,6 +143,7 @@ object Entry {
         val amountErrors = HashMap<Int, String>()
 
         if (draft.payee.contains('|')) errors.add("The payee can't contain |. Put the rest in the note.")
+        if (draft.code.contains(')') || draft.code.contains('\n')) errors.add("The code can't contain ) or a line break.")
         for ((label, s) in listOf("payee" to draft.payee, "note" to draft.note)) {
             if (s.contains(';')) errors.add("The $label can't contain ; because it starts a comment.")
             if (s.any { it == '\n' || it == '\r' }) errors.add("The $label must be one line.")
@@ -410,6 +413,7 @@ object Entry {
                 Status.PENDING -> append(" !")
                 Status.UNMARKED -> Unit
             }
+            if (draft.code.isNotBlank()) append(" (").append(draft.code.trim()).append(')')
             if (draft.description.isNotEmpty()) append(' ').append(draft.description)
             if (draft.comment.isNotBlank()) append("  ; ").append(draft.comment.trim())
         }
@@ -669,7 +673,8 @@ object Entry {
         }
         val t = journal.transactions.firstOrNull { it.line == startLine }
             ?: throw EntryException("The transaction would be inside a comment block, so it wouldn't be read. $nothing")
-        if (t.date != draft.date || t.status != draft.status || t.description != draft.description || t.comment != draft.comment.trim()) {
+        if (t.date != draft.date || t.status != draft.status || t.description != draft.description || t.comment != draft.comment.trim() ||
+            t.code != draft.code.trim()) {
             throw EntryException("The transaction's description wouldn't read back as entered. $nothing")
         }
         val rows = resolve(draft, styles)
@@ -732,7 +737,6 @@ object Entry {
         val out = LinkedHashSet<String>()
         if (t.file != null) out.add("it's in ${t.file}, an included file, which is only read here (change it there)")
         else if (t.line <= 0 || source == null) out.add("its place in the file isn't known")
-        if (t.code.isNotEmpty()) out.add("a code (${t.code})")
         if (t.date2 != null) out.add("a secondary date")
         if (t.comment.contains('\n')) out.add("a comment on several lines")
         for (p in t.postings) {
@@ -784,10 +788,11 @@ object Entry {
             note = if (t.description.contains('|')) t.description.substringAfter('|').trim() else "",
             comment = if (keepComments) t.comment else "",
             postings = postings + List((2 - postings.size).coerceAtLeast(0)) { DraftPosting() },
+            // A reference belongs to the one transaction: kept when editing it, not when repeating it.
+            code = if (keepComments) t.code else "",
         )
     }
 
-    /** A quantity as it would be typed in the form, eg "4.50" or "4,50". */
     /**
      * A price as typed: "@ $1.10" (each unit), "@@ $99" (all of it), or "$1.10" (each unit), with the
      * currency before or after the number, which can be a sum. Returns the price, or the problem with it.
@@ -830,6 +835,7 @@ object Entry {
     fun costText(cost: Cost, styles: Styles, pad: Boolean = true): String =
         (if (cost.isTotal) "@@ " else "@ ") + formatExact(cost.commodity, cost.quantity, styles, pad)
 
+    /** A quantity as it would be typed in the form, eg "4.50" or "4,50". */
     fun amountInput(quantity: BigDecimal, style: AmountStyle): String {
         val scale = maxOf(style.precision, quantity.stripTrailingZeros().scale().coerceAtLeast(0))
         val plain = quantity.setScale(scale, java.math.RoundingMode.HALF_EVEN).toPlainString()

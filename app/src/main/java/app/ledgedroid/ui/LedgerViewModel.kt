@@ -1,5 +1,6 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.LookupTable
 import kotlinx.coroutines.flow.first
 import app.ledgedroid.core.UndoHistory
 import app.ledgedroid.core.TransactionPages
@@ -1681,8 +1682,27 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Read shared text, as quick add would. */
-    fun readShared(text: String, patterns: List<SharePattern> = _sharePatterns.value): SharedEntry =
-        ShareParse.parse(text, patterns, LocalDate.now(), (_load.value as? LoadState.Loaded)?.journal?.styles?.commodities().orEmpty())
+    fun readShared(text: String, patterns: List<SharePattern> = _sharePatterns.value, lookups: List<LookupTable>? = null): SharedEntry =
+        ShareParse.parse(text, patterns, LocalDate.now(), (_load.value as? LoadState.Loaded)?.journal?.styles?.commodities().orEmpty(),
+            lookups ?: if (_lookupsOn.value) _lookupTables.value else emptyList())
+
+    /** Lookup tables (Settings › Share patterns): a captured value, eg a card's digits, to an account. */
+    private val _lookupTables = MutableStateFlow(Store.readLookupTables(prefs))
+    val lookupTables: StateFlow<List<LookupTable>> = _lookupTables.asStateFlow()
+
+    fun setLookupTables(tables: List<LookupTable>) {
+        _lookupTables.value = tables
+        Store.writeLookupTables(prefs, tables)
+    }
+
+    /** Whether lookup tables are used at all. Remembered. */
+    private val _lookupsOn = MutableStateFlow(prefs.getBoolean(KEY_LOOKUPS_ON, true))
+    val lookupsOn: StateFlow<Boolean> = _lookupsOn.asStateFlow()
+
+    fun setLookupsOn(on: Boolean) {
+        _lookupsOn.value = on
+        prefs.edit().putBoolean(KEY_LOOKUPS_ON, on).apply()
+    }
 
     /** Start quick add from shared text: what was picked out becomes its defaults. */
     fun startShared(text: String) {
@@ -2107,6 +2127,7 @@ class LedgerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_LIGHTWEIGHT = "lightweightMode"
         private const val KEY_LIGHT_OFF = "lightweightPartsOff"
         private const val KEY_LANDING = "landingScreen"
+        private const val KEY_LOOKUPS_ON = "lookupTablesOn"
         private const val UNDO_STEPS = 20
         private const val LIGHT_UNDO_STEPS = 5
         private const val KEY_TX_PAGE_SIZE = "transactionsPageSize"

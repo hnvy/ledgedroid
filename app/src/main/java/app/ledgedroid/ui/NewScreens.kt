@@ -1,5 +1,10 @@
 package app.ledgedroid.ui
 
+import app.ledgedroid.core.ShareParse
+import app.ledgedroid.core.LookupTarget
+import app.ledgedroid.core.LookupTable
+import app.ledgedroid.core.LookupEntry
+import app.ledgedroid.core.QuickAdd
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -248,6 +253,17 @@ fun HealthScreen(journal: Journal, onDeclare: (List<String>, List<String>) -> Un
 
 // ====================================================================== share patterns
 
+/** What a shared message was read as, for the "Try it" boxes: each part found, the amount with its direction. */
+private fun describeShared(e: SharedEntry, templates: List<Template>): String = listOfNotNull(
+    e.signedAmount?.let { "amount $it" + if (e.moneyIn) " (money in)" else "" },
+    e.payee?.let { "payee $it" }, e.note?.let { "note $it" }, e.date?.let { "date $it" },
+    e.account?.let { "account $it" }, e.account2?.let { "second account $it" },
+    e.status?.let { "status " + QuickAdd.markOf(it).trim() }, e.code?.let { "code ($it)" },
+    e.commentText?.let { "comment $it" },
+    e.lookedUp.takeIf { it.isNotEmpty() }?.let { "looked up " + it.joinToString("; ") },
+    e.templateId?.let { id -> "template ${templates.firstOrNull { it.id == id }?.name ?: id}" },
+).joinToString(", ").ifEmpty { "nothing found" }
+
 /**
  * The person's patterns for reading shared text, tried in order before the built-in reading, with a box
  * to try text against them and see what each would pick out.
@@ -259,10 +275,16 @@ fun SharePatternsScreen(
     onChange: (List<SharePattern>) -> Unit,
     read: (String, List<SharePattern>) -> SharedEntry,
     onBack: () -> Unit,
+    /** Lookup tables: a captured value to an account; and whether they're used at all. */
+    tables: List<LookupTable> = emptyList(),
+    onTables: (List<LookupTable>) -> Unit = {},
+    lookupsOn: Boolean = true,
+    onLookupsOn: (Boolean) -> Unit = {},
 ) {
     val lc = LocalLedgerColors.current
     var sample by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<SharePattern?>(null) }
+    var editingTable: LookupTable? by remember { mutableStateOf<LookupTable?>(null) }
     Scaffold(
         topBar = { LedgerTopBar("Share patterns", onBack) },
         floatingActionButton = {
@@ -276,7 +298,11 @@ fun SharePatternsScreen(
                     style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
                 Text("A pattern is a regular expression (ignoring case) whose named groups pick things out: (?<amount>…), (?<currency>…), " +
-                        "(?<payee>…), (?<date>…), (?<account>…). For example: spent (?<amount>[0-9.,]+) (?<currency>[A-Z]{3}) at (?<payee>.+?) on",
+                        "(?<payee>…), (?<date>…), (?<account>…) and (?<account2>…) (the first account and the second, eg the bank), " +
+                        "(?<note>…) (after the payee's |), (?<comment>…), (?<tags>…), (?<code>…) (a reference, written as (A1B2C3)), " +
+                        "(?<status>…) (* or cleared, ! or pending), and (?<credit>…), which, when it matches (CR, credited), makes the " +
+                        "amount money in. A group named tag and a name, like (?<tagCard>[0-9]{4}), keeps it as the tag card:1234. " +
+                        "For example: spent (?<amount>[0-9.,]+) (?<currency>[A-Z]{3}) at (?<payee>.+?) on",
                     style = MaterialTheme.typography.bodySmall, color = lc.mutedInk, fontFamily = FontFamily.Default)
             }
             item {
@@ -285,10 +311,7 @@ fun SharePatternsScreen(
                 if (sample.isNotBlank()) {
                     val e = read(sample, patterns)
                     Text(
-                        (if (e.matchedBy != null) "Pattern \"${e.matchedBy}\": " else "Built-in reading: ") + listOfNotNull(
-                            e.amount?.let { "amount ${e.hints().amount}" }, e.payee?.let { "payee $it" }, e.date?.let { "date $it" },
-                            e.account?.let { "account $it" }, e.templateId?.let { id -> "template ${templates.firstOrNull { it.id == id }?.name ?: id}" },
-                        ).joinToString(", ").ifEmpty { "nothing found" },
+                        (if (e.matchedBy != null) "Pattern \"${e.matchedBy}\": " else "Built-in reading: ") + describeShared(e, templates),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp),
                     )
                 }
@@ -310,6 +333,37 @@ fun SharePatternsScreen(
                     }
                 }
             }
+            // Lookup tables: a captured value (a card's digits) to the account it means.
+            item(key = "lookups") {
+                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().clickable { onLookupsOn(!lookupsOn) }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Lookup tables", style = MaterialTheme.typography.titleMedium)
+                            Text("Map a captured value to an account, eg card 4821 → liabilities:visa, so one pattern serves every card at a bank.",
+                                style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
+                        }
+                        Switch(checked = lookupsOn, onCheckedChange = onLookupsOn)
+                    }
+                }
+            }
+            items(tables, key = { "t:" + it.id }) { t ->
+                Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium) {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(t.name.ifEmpty { "(no name)" }, style = MaterialTheme.typography.bodyLarge)
+                            Text("${t.group} → ${t.target.label} · ${t.entries.size} row${if (t.entries.size == 1) "" else "s"}" +
+                                    if (!lookupsOn) " (lookup tables are off)" else "",
+                                style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
+                        }
+                        Switch(checked = t.enabled, onCheckedChange = { on -> onTables(tables.map { if (it.id == t.id) it.copy(enabled = on) else it }) })
+                        IconButton(onClick = { editingTable = t }) { Icon(Icons.Default.Edit, "Edit") }
+                        IconButton(onClick = { onTables(tables - t) }) { Icon(Icons.Default.Delete, "Delete") }
+                    }
+                }
+            }
+            item(key = "addTable") {
+                TextButton(onClick = { editingTable = LookupTable("l" + System.currentTimeMillis(), "", "card") }) { Text("Add a lookup table") }
+            }
         }
     }
     editing?.let { p ->
@@ -318,6 +372,61 @@ fun SharePatternsScreen(
             editing = null
         }, onDismiss = { editing = null })
     }
+    editingTable?.let { t ->
+        // The groups the patterns name (and card, which the built-in reading offers), to choose from.
+        val groups = (patterns.flatMap { ShareParse.groupNames(it.regex) } + "card").distinct()
+        LookupTableDialog(t, groups, onSave = { saved ->
+            onTables(if (tables.any { it.id == saved.id }) tables.map { if (it.id == saved.id) saved else it } else tables + saved)
+            editingTable = null
+        }, onDismiss = { editingTable = null })
+    }
+}
+
+/** A lookup table's name, the group it reads, the account it fills, and its rows (value → account). */
+@Composable
+private fun LookupTableDialog(table: LookupTable, groups: List<String>, onSave: (LookupTable) -> Unit, onDismiss: () -> Unit) {
+    var name: String by remember { mutableStateOf(table.name) }
+    var group: String by remember { mutableStateOf(table.group) }
+    var target: LookupTarget by remember { mutableStateOf(table.target) }
+    var rows: List<LookupEntry> by remember { mutableStateOf(table.entries.ifEmpty { listOf(LookupEntry("", "")) }) }
+    val saved = table.copy(name = name.trim(), group = group.trim(), target = target,
+        entries = rows.filter { it.value.isNotBlank() && it.account.isNotBlank() }.map { LookupEntry(it.value.trim(), it.account.trim()) })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (table.group.isEmpty()) "New lookup table" else "Edit lookup table") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name, eg My cards") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = group, onValueChange = { group = it.filter(Char::isLetterOrDigit) }, singleLine = true,
+                    label = { Text("The group it reads") }, supportingText = { Text("A named group in your patterns, eg card for (?<card>[0-9]{4})") },
+                    modifier = Modifier.fillMaxWidth())
+                if (groups.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    groups.forEach { g -> FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g) }) }
+                }
+                Text("Fills", style = MaterialTheme.typography.bodySmall)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    LookupTarget.entries.forEachIndexed { i, t ->
+                        SegmentedButton(selected = target == t, onClick = { target = t }, shape = SegmentedButtonDefaults.itemShape(i, LookupTarget.entries.size), icon = {}) {
+                            Text(t.label)
+                        }
+                    }
+                }
+                Text("Each value, and the account it means:", style = MaterialTheme.typography.bodySmall)
+                rows.forEachIndexed { i, r ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(value = r.value, onValueChange = { v -> rows = rows.toMutableList().also { it[i] = r.copy(value = v) } },
+                            label = { Text("Value") }, singleLine = true, modifier = Modifier.weight(0.4f))
+                        OutlinedTextField(value = r.account, onValueChange = { v -> rows = rows.toMutableList().also { it[i] = r.copy(account = v) } },
+                            label = { Text("Account") }, singleLine = true, modifier = Modifier.weight(0.6f))
+                        IconButton(onClick = { rows = rows.filterIndexed { j, _ -> j != i } }) { Icon(Icons.Default.Delete, "Remove row") }
+                    }
+                }
+                TextButton(onClick = { rows = rows + LookupEntry("", "") }) { Text("Add a row") }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(saved) }, enabled = saved.group.isNotEmpty() && saved.entries.isNotEmpty()) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -332,7 +441,8 @@ private fun SharePatternDialog(
     var name by remember { mutableStateOf(pattern.name) }
     var regex by remember { mutableStateOf(pattern.regex) }
     var templateId by remember { mutableStateOf(pattern.templateId) }
-    val draft = pattern.copy(name = name.trim(), regex = regex, templateId = templateId)
+    var moneyIn: Boolean by remember { mutableStateOf(pattern.moneyIn) }
+    val draft = pattern.copy(name = name.trim(), regex = regex, templateId = templateId, moneyIn = moneyIn)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (pattern.regex.isEmpty()) "New pattern" else "Edit pattern") },
@@ -343,6 +453,18 @@ private fun SharePatternDialog(
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     isError = regex.isNotEmpty() && draft.problem != null, supportingText = { (draft.problem.takeIf { regex.isNotEmpty() })?.let { Text(it) } },
                     modifier = Modifier.fillMaxWidth())
+                // Which way the money goes: in (a refund, a salary) makes the amount negative on the first account.
+                Row(Modifier.fillMaxWidth().clickable { moneyIn = !moneyIn }, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Amounts are money in", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (moneyIn) "Refunds, salary and the like: the amount goes in negative. A (?<credit>…) group that matches turns it round."
+                            else "Spending: the amount goes in as it is. A (?<credit>…) group that matches (CR, credited) makes it money in.",
+                            style = MaterialTheme.typography.bodySmall, color = LocalLedgerColors.current.mutedInk,
+                        )
+                    }
+                    Switch(checked = moneyIn, onCheckedChange = { moneyIn = it })
+                }
                 if (templates.isNotEmpty()) {
                     Text("When it matches, start from a template:", style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -352,9 +474,7 @@ private fun SharePatternDialog(
                 }
                 if (sample.isNotBlank() && draft.problem == null) {
                     val e = read(sample, listOf(draft))
-                    Text(if (e.matchedBy == null) "Doesn't match the text being tried." else "Matches the text being tried: " +
-                            listOfNotNull(e.amount?.let { "amount ${e.hints().amount}" }, e.payee?.let { "payee $it" }, e.date?.let { "date $it" }, e.account?.let { "account $it" })
-                                .joinToString(", ").ifEmpty { "nothing picked out" },
+                    Text(if (e.matchedBy == null) "Doesn't match the text being tried." else "Matches the text being tried: " + describeShared(e, templates),
                         style = MaterialTheme.typography.bodySmall)
                 }
             }

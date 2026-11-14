@@ -23,6 +23,8 @@ data class QuickHints(
     val account: String? = null,
     /** The first amount, with its currency, eg $4.50. */
     val amount: String? = null,
+    /** The second account (where the money came from or went), eg assets:bank. */
+    val account2: String? = null,
 )
 
 /** What a prompt asks, what Enter on an empty answer gives ([default]), and a hint about what else works. */
@@ -129,7 +131,35 @@ class QuickAdd(
     fun startWith(template: Template, date: LocalDate = today, hints: QuickHints = QuickHints()): QuickAddState {
         val d = hints.date ?: date
         val dated = (submit(start(d, hints), d.toString()) as QuickResult.Next).state
-        return (submit(dated, template.name, QuickCompletion(template.name, template)) as QuickResult.Next).state
+        val s = (submit(dated, template.name, QuickCompletion(template.name, template)) as QuickResult.Next).state
+        // What was captured from shared text wins over the template's; the template's is the fallback.
+        val draft = captured(s.draft, hints)
+        if (draft == s.draft) return s
+        return s.copy(
+            draft = draft,
+            log = s.log.dropLast(1) + ("Template" to markOf(draft.status) + (if (draft.code.isNotBlank()) "(${draft.code}) " else "") +
+                    "${template.name}: ${draft.description.ifEmpty { "no payee" }}"),
+        )
+    }
+
+    /**
+     * [draft] (from a template) with what [hints] captured put over it: the payee and what comes with it in
+     * the payee's default (status, code, note, comment), each only where something was captured.
+     */
+    private fun captured(draft: TransactionDraft, hints: QuickHints): TransactionDraft {
+        val text = hints.payee ?: return draft
+        val (status, afterStatus) = splitStatus(text)
+        val (code, afterCode) = splitCode(afterStatus)
+        val (described, comment) = Intelligent.splitComment(afterCode)
+        val payee = described.substringBefore('|').trim()
+        val note = if ('|' in described) described.substringAfter('|').trim() else ""
+        return draft.copy(
+            payee = payee.ifEmpty { draft.payee },
+            note = note.ifEmpty { draft.note },
+            comment = comment.ifEmpty { draft.comment },
+            status = status ?: draft.status,
+            code = code ?: draft.code,
+        )
     }
 
     fun prompt(s: QuickAddState): QuickPrompt = when (val step = s.step) {
@@ -138,15 +168,17 @@ class QuickAdd(
             "Payee",
             s.hints.payee,
             (if (templates.isEmpty()) "payee | note adds a note" else "Tab for payees and templates; payee | note adds a note") +
-                    "; * or ! first marks it cleared or pending; ; comment adds a comment",
+                    "; * or ! first marks it cleared or pending, (code) adds a reference; ; comment adds a comment",
         )
         is QuickStep.Account -> {
             val entered = s.draft.postings.take(step.index)
             val balanced = smart && Intelligent.balanced(entered)
             QuickPrompt(
                 "Account ${step.index + 1}",
-                templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() }
-                    ?: s.hints.account?.takeIf { step.index == 0 }
+                // A captured account wins over the template's, as the captured amount does.
+                s.hints.account?.takeIf { step.index == 0 }
+                    ?: s.hints.account2?.takeIf { step.index == 1 }
+                    ?: templatePosting(s, step.index)?.account?.takeIf { it.isNotBlank() }
                     // Intelligent: the similar transaction's next account, until it all balances.
                     ?: s.reference?.takeIf { smart && !balanced }?.let { Intelligent.nextAccount(it, entered) },
                 when {
@@ -178,8 +210,11 @@ class QuickAdd(
 
     /** Templates first (the first few when nothing's typed), then payees; a typed status mark (* or !) is kept. */
     private fun payeeCompletions(typed: String, limit: Int): List<QuickCompletion> {
-        val (mark, t) = splitStatus(typed).let { (status, rest) -> markOf(status) to rest }
-        return payeeCompletionsOf(t, limit).map { c -> if (mark.isEmpty()) c else c.copy(value = mark + c.value) }
+        val (status, afterStatus) = splitStatus(typed)
+        val (code, t) = splitCode(afterStatus)
+        // What came before the payee (status mark, code) stays in front of each suggestion.
+        val prefix = markOf(status) + (code?.let { "($it) " } ?: "")
+        return payeeCompletionsOf(t, limit).map { c -> if (prefix.isEmpty()) c else c.copy(value = prefix + c.value) }
     }
 
     private fun payeeCompletionsOf(t: String, limit: Int): List<QuickCompletion> {
@@ -237,11 +272,15 @@ class QuickAdd(
             }
 
             QuickStep.Payee -> {
-                // * or ! first marks it cleared or pending, as in the journal: "* Corner Cafe".
-                val (status, unmarked) = splitStatus(given)
+                // * or ! first marks it cleared or pending, and a code in brackets can follow, as in the journal:
+                // "* (A1B2C3) Corner Cafe".
+                val (status, afterStatus) = splitStatus(given)
+                val (code, unmarked) = splitCode(afterStatus)
                 val template = chosen?.template?.takeIf { chosen.value == answer }
                 if (template != null) {
-                    val draft = template.draft.copy(date = s.draft.date).let { d -> if (status != null) d.copy(status = status) else d }
+                    val draft = template.draft.copy(date = s.draft.date)
+                        .let { d -> if (status != null) d.copy(status = status) else d }
+                        .let { d -> if (code != null) d.copy(code = code) else d }
                     return next(
                         s, s.copy(draft = draft.copy(postings = emptyList()), step = QuickStep.Account(0), template = template),
                         "Template" to markOf(draft.status) + "${template.name}: ${draft.description.ifEmpty { "no payee" }}",
@@ -250,14 +289,17 @@ class QuickAdd(
                 val (text, comment) = Intelligent.splitComment(unmarked)
                 val payee = text.substringBefore('|').trim()
                 val note = if ('|' in text) text.substringAfter('|').trim() else ""
-                val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment }, status = status ?: s.draft.status)
+                val draft = s.draft.copy(payee = payee, note = note, comment = comment.ifEmpty { s.draft.comment }, status = status ?: s.draft.status,
+                    code = code ?: s.draft.code)
+                if (draft.code.contains(')')) return QuickResult.Problem("The code can't contain )")
                 Entry.check(draft.copy(postings = listOf(DraftPosting("a", "0"), DraftPosting("b", "0"))), styles)
                     .errors.firstOrNull { it.startsWith("The payee") || it.startsWith("The note") }
                     ?.let { return QuickResult.Problem(it) }
                 // Intelligent: the transaction to follow, for the accounts and amounts that come next.
                 val reference = if (smart) Intelligent.similar(journal!!, draft.description) else null
                 next(s, s.copy(draft = draft, step = QuickStep.Account(0), reference = reference),
-                    "Payee" to markOf(draft.status) + draft.description.ifEmpty { "(none)" } + (if (comment.isNotEmpty()) " ; $comment" else ""))
+                    "Payee" to markOf(draft.status) + (if (draft.code.isNotBlank()) "(${draft.code}) " else "") + draft.description.ifEmpty { "(none)" } +
+                            (if (comment.isNotEmpty()) " ; $comment" else ""))
             }
 
             is QuickStep.Account -> {
@@ -330,7 +372,7 @@ class QuickAdd(
         val t = text.trim()
         if (t.isEmpty() || (s.step != QuickStep.Payee && s.step !is QuickStep.Account)) return null
         val exact = when (s.step) {
-            QuickStep.Payee -> splitStatus(t).second.let { p ->
+            QuickStep.Payee -> splitCode(splitStatus(t).second).second.let { p ->
                 templates.any { it.name == p } || suggestions?.isKnownPayee(p) == true || (smart && p in descriptionsByUse)
             }
             else -> suggestions?.isKnownAccount(t) == true
@@ -453,6 +495,18 @@ class QuickAdd(
                 else -> return null to text.trim()
             }
             return status to t.substring(1).trim()
+        }
+
+        /**
+         * A code in brackets at the start (after any status mark), as hledger writes it: "(A1B2C3) Corner Cafe".
+         * Returns the code (null if there's none) and the rest.
+         */
+        fun splitCode(text: String): Pair<String?, String> {
+            val t = text.trimStart()
+            if (!t.startsWith("(")) return null to text.trim()
+            val close = t.indexOf(')')
+            if (close < 0) return null to text.trim()
+            return t.substring(1, close).trim() to t.substring(close + 1).trim()
         }
 
         /** "* " or "! " for a status, as shown before the payee; "" for unmarked. */

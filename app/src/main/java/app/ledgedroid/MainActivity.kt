@@ -291,7 +291,12 @@ fun LedgerApp(vm: LedgerViewModel) {
 
             Screen.SharePatterns -> {
                 BackHandler(onBack = vm::back)
-                SharePatternsScreen(sharePatterns, templates, onChange = vm::setSharePatterns, read = { t, p -> vm.readShared(t, p) }, onBack = vm::back)
+                val lookupTables by vm.lookupTables.collectAsStateWithLifecycle()
+                val lookupsOn by vm.lookupsOn.collectAsStateWithLifecycle()
+                SharePatternsScreen(
+                    sharePatterns, templates, onChange = vm::setSharePatterns, read = { t, p -> vm.readShared(t, p) }, onBack = vm::back,
+                    tables = lookupTables, onTables = vm::setLookupTables, lookupsOn = lookupsOn, onLookupsOn = vm::setLookupsOn,
+                )
             }
 
             is Screen.TransactionDetail -> {
