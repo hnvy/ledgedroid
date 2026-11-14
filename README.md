@@ -21,6 +21,8 @@
   please consider [sponsoring
   hledger](https://hledger.org/sponsor.html).
 - Ledgedroid is not affiliated with hledger.
+- You may find it useful to try out
+  [Receiptdroid](https://github.com/hnvy/receiptdroid).
 - The app icon was drawn using the beautiful
   [Aseprite](https://www.aseprite.org/). Buy it and you won't regret
   it!
