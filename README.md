@@ -348,10 +348,39 @@ payee it found as the first prompts' defaults. It knows common wording
 to SWIGGY on 31-Oct-26`); dates are read day first unless that can't
 be a date, and currencies become the journal's own (`$` or
 `USD`). **Settings › Share patterns** adds your own regular expressions,
-tried first and in order, with named groups `(?<amount>…)`,
-`(?<currency>…)`, `(?<payee>…)`, `(?<date>…)` and `(?<account>…)`; a
-pattern can also start from a template. A box there tries a message
-against them all.
+tried first and in orderTheir named groups pick out each part of the transaction:
+`(?<amount>…)`, `(?<currency>…)`, `(?<payee>…)`, `(?<date>…)`,
+`(?<account>…)` and `(?<account2>…)` (the first account, and the
+second, eg the bank), `(?<note>…)` (after the payee's `|`),
+`(?<comment>…)`, `(?<tags>…)`, `(?<code>…)` (a reference, written
+after the date as `(A1B2C3)`), and `(?<status>…)` (`*` or cleared, `!`
+or pending). A group named `tag` and a name, like
+`(?<tagCard>[0-9]{4})`, keeps a card's last four digits as the tag
+`card:4821`. A pattern can also start from a template: what the
+message captured (payee, note, comment, code, status, accounts,
+amount) wins, and the template fills in the rest.
+
+Amounts come in as money out (spending) unless the pattern says
+**Amounts are money in** (refunds, salary): then the amount goes in
+negative on the first account, and the second (the bank) balances
+it. A `(?<credit>…)` group that matches, like
+`(?<credit>CR|credited)`, turns the pattern's direction round. The
+built-in reading knows money in too ("credited", "refund"…), and keeps
+a card's last four digits (`card:4821`) and a reference number (as the
+code). The **Try it** box shows what each message is read as,
+direction included.
+
+**Lookup tables** (in Share patterns, with a switch to turn them all
+on or off) map a captured value to an account, so one pattern can
+serve every card at a bank: a table reading the group `card` (from
+`(?<card>[0-9]{4})`, or the card digits the built-in reading finds),
+with rows `4821 → liabilities:visa` and `5678 → assets:current`, fills
+Account 2 with the right paying account each time. A table reads any
+named group (including tag groups like `tagCard`) and fills Account 1
+or Account 2; values match ignoring case and spaces, whole (a row `21`
+doesn't match `4821`). A looked-up account replaces what the group
+captured, and wins over a template's account. Each table has its own
+switch, and **Try it** shows what was looked up.
 
 ## Renaming and journal health
 
