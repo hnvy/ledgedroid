@@ -332,7 +332,7 @@ backup before each change (on by default), skip if unchanged, how many
 to keep, and **Back up now**. Restore by copying a `.bak` file over the
 journal.
 
-## Reminders and sharing
+## Reminders
 
 You can give a template a schedule (Templates › ⋮ › Remind me…: every
 N days, weeks or months, from a date). On the day, a notification
@@ -340,6 +340,8 @@ comes, unless a transaction with that payee is already in the journal;
 tap it to add from the template (quick add or the form, as set). It's
 in **Settings › Notifications**, checked a few times a day and when the
 app opens.
+
+## Sharing patterns
 
 You can share a bank SMS, a notification's text or a note to
 Ledgedroid, and quick add starts with the amount, currency, date and
