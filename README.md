@@ -35,6 +35,8 @@ TL;DR yes, and I'm sorry if it doesn't sit right with you. You're
 welcome to take what you like from it and write your own version by
 hand. It's all under GPL 3.0 :)
 
+**Please note that Ledgedroid is not vibe-coded! Every design decision, feature, and modifications was dictated by myself / other users. It is probably why the app does not strike one as "AI slop".**
+
 Besides, I'm not here to flog you anything... just sharing what I
 think would be akin to "this helped me, maybe it'll help you too".
 
