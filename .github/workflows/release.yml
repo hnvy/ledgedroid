@@ -12,6 +12,10 @@ on:
         description: "Make a draft release (only visible to you) to check it first"
         type: boolean
         default: true
+      about:
+        description: "About text (empty: keep the repository's). \\n starts a new line"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -61,6 +65,37 @@ jobs:
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
           echo "Version $v, version code $code"
+
+      # Settings › About: the text (this run's input, else the repository variable LEDGEDROID_ABOUT, else the
+      # committed app/src/main/assets/about.md), and the build's details. Values come in through env, so text
+      # typed into the input can't run as commands.
+      - name: Write the About text
+        env:
+          ABOUT_INPUT: ${{ inputs.about }}
+          ABOUT_VARIABLE: ${{ vars.LEDGEDROID_ABOUT }}
+          VERSION: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          mkdir -p app/src/main/assets
+          about=app/src/main/assets/about.md
+          if [ -n "$ABOUT_INPUT" ]; then
+            # \n in the one-line input starts a new line.
+            printf '%s\n' "${ABOUT_INPUT//\\n/$'\n'}" > "$about"
+            echo "About text: from this run's input"
+          elif [ -n "$ABOUT_VARIABLE" ]; then
+            printf '%s\n' "$ABOUT_VARIABLE" > "$about"
+            echo "About text: from the repository variable LEDGEDROID_ABOUT"
+          else
+            echo "About text: the repository's $about"
+          fi
+          {
+            echo "version=$VERSION"
+            echo "versionCode=$VERSION_CODE"
+            echo "commit=${GITHUB_SHA::7}"
+            echo "built=$(date -u +%Y-%m-%d)"
+            echo "repository=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          } > app/src/main/assets/build.properties
+          cat app/src/main/assets/build.properties
 
       - name: Secrets check
         env:

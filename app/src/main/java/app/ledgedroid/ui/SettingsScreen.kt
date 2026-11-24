@@ -68,6 +68,8 @@ fun SettingsScreen(
     onQuickAdd: (Boolean) -> Unit,
     quickAddDefault: Boolean,
     onQuickAddDefault: (Boolean) -> Unit,
+    /** Open Settings › About. */
+    onAbout: () -> Unit = {},
     /** What the app opens on. */
     landing: LedgerViewModel.Landing = LedgerViewModel.Landing.ACCOUNTS,
     onLanding: (LedgerViewModel.Landing) -> Unit = {},
@@ -383,6 +385,17 @@ fun SettingsScreen(
                         color = lc.mutedInk,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     )
+                }
+            }
+
+            Heading("About")
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onAbout).padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("About Ledgedroid", style = MaterialTheme.typography.bodyLarge)
+                    Text("Version, links and credits", style = MaterialTheme.typography.bodySmall, color = lc.mutedInk)
                 }
             }
         }

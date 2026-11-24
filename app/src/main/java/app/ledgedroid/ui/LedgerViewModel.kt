@@ -303,6 +303,9 @@ sealed interface Screen {
     data object Templates : Screen
     data object SavedViews : Screen
     data object Settings : Screen
+
+    /** Settings › About. */
+    data object About : Screen
     data object Search : Screen
 
     /**

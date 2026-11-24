@@ -1,5 +1,6 @@
 package app.ledgedroid
 
+import app.ledgedroid.ui.AboutScreen
 import app.ledgedroid.ui.Message
 import app.ledgedroid.ui.AllTransactionsScreen
 import kotlinx.coroutines.flow.collectLatest
@@ -379,6 +380,11 @@ fun LedgerApp(vm: LedgerViewModel) {
                 )
             }
 
+            Screen.About -> {
+                BackHandler(onBack = vm::back)
+                AboutScreen(onBack = vm::back)
+            }
+
             Screen.Settings -> {
                 BackHandler(onBack = vm::back)
                 val backupUi by vm.backupUi.collectAsStateWithLifecycle()
@@ -409,6 +415,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     onLightPart = vm::setLightPart,
                     landing = landing,
                     onLanding = vm::setLanding,
+                    onAbout = { vm.push(Screen.About) },
                     intelligent = intelligent,
                     onIntelligent = vm::setIntelligent,
                     intelligentFuzzy = intelligentFuzzy,

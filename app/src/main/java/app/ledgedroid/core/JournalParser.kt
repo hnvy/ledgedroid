@@ -673,7 +673,14 @@ private class ParseRun(
             readSign()
         }
         val numStart = i
-        while (i < s.length && (s[i].isDigit() || s[i] in NUMBER_PUNCT)) i++
+        while (i < s.length) {
+            val c = s[i]
+            if (c.isDigit() || c in NUMBER_PUNCT) { i++; continue }
+            // A space is a digit group mark only between digits, as in hledger: 1 000.00 EUR (and the same
+            // for no-break, thin and the other spaces it accepts). Anything else ends the number.
+            if (c in SPACE_MARKS && i > numStart && s[i - 1].isDigit() && i + 1 < s.length && s[i + 1].isDigit()) { i++; continue }
+            break
+        }
         val number = s.substring(numStart, i)
         if (number.none { it.isDigit() }) throw JournalException(lineNo, "expected a number in the amount \"$s\"")
         if (commodity == null) {
@@ -807,7 +814,13 @@ private class ParseRun(
     companion object {
         private val SEPARATOR = Regex("\t| {2,}")
         private val QUOTED = Regex("\"[^\"]*\"")
-        private const val NUMBER_PUNCT = ".,_'\u00A0\u202F\u2009"
+        private const val NUMBER_PUNCT = ".,_'"
+
+        /**
+         * The spaces hledger accepts as digit group marks (its isDigitSeparatorSpaceChar): space, no-break, en,
+         * em, punctuation, thin, narrow no-break and medium mathematical space. Only between digits.
+         */
+        private const val SPACE_MARKS = " \u00A0\u2002\u2003\u2008\u2009\u202F\u205F"
         private val TYPE_TAG = Regex("(?:^|[\\s,])type:\\s*([A-Za-z]+)")
     }
 }

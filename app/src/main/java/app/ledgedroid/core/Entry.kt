@@ -237,7 +237,9 @@ object Entry {
      */
     fun parseAmount(text: String): BigDecimal? {
         val t = text.trim().replace('\u2212', '-').replace('×', '*').replace('÷', '/')
-        // Spaces are allowed around operators and brackets, but not between two numbers ("2 3" isn't 23).
+            // A space grouping digits in threes is a digit group mark, as journals write them: 1 000.50.
+            .replace(SPACE_GROUP, "")
+        // Other spaces are allowed around operators and brackets, but not between two numbers ("2 3" isn't 23).
         if (Regex("[\\d.,]\\s+[\\d.,]").containsMatchIn(t)) return null
         val s = t.filterNot { it.isWhitespace() }
         if (s.isEmpty()) return null
@@ -245,6 +247,9 @@ object Entry {
         if (s.none { it in "+*/()" } && s.lastIndexOf('-') <= 0) return parseNumber(s)
         return ExpressionParser(s).parse()?.stripTrailingZeros()?.let { if (it.scale() < 0) it.setScale(0) else it }
     }
+
+    /** A space (or no-break, thin… space) between digits, followed by a group of exactly three digits. */
+    private val SPACE_GROUP = Regex("(?<=\\d)[ \u00A0\u2002\u2003\u2008\u2009\u202F\u205F](?=\\d{3}(?!\\d))")
 
     /** True if [text] is a sum rather than a single number, so the form can show its result. */
     fun isExpression(text: String): Boolean {
