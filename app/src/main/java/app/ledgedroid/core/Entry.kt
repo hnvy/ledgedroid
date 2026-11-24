@@ -752,9 +752,17 @@ object Entry {
             if (p.status != Status.UNMARKED) out.add("postings marked cleared or pending")
             if (p.comment.contains('\n')) out.add("an account comment on several lines")
         }
-        if (source != null && source.lines().drop(1)
-                .any { splitComment(it).first.contains('{') }
-        ) out.add("lot prices ({ })")
+        // What reading skips after an amount would be lost by writing the transaction again: not editable.
+        if (source != null) {
+            for (line in source.lines().drop(1)) {
+                val amount = JournalEdits.parsePostingLine(line)?.rest?.let { splitComment(it).first } ?: continue
+                if (stripLotAnnotations(amount) == amount) continue
+                if ("((" in amount) out.add("valuation expressions (( ))")
+                if ('{' in amount) out.add("lot prices ({ })")
+                if ('[' in amount) out.add("lot dates ([ ])")
+                if (Regex("[^(]\\((?![(@])").containsMatchIn(amount.replace("((", "  "))) out.add("lot notes ( )")
+            }
+        }
         return out.toList()
     }
 

@@ -19,7 +19,8 @@ import java.time.LocalDate
  * when [auto] is true, like hledger --auto.
  *
  * Market prices (P) are read for valuation (-V, -X). Included files are read when [JournalParser.parse] is
- * given a way to find them (see [Includes]). Timeclock/timedot and lot tracking are skipped. Anything
+ * given a way to find them (see [Includes]). Timeclock/timedot and lot tracking are skipped, as are Ledger-style
+ * valuation expressions ((…)) after an amount, which hledger ignores too. Anything
  * skipped that could change balances is reported as a warning.
  */
 class JournalParser(
@@ -921,21 +922,46 @@ internal fun indexOutsideQuotes(s: String, ch: Char): Int {
     return -1
 }
 
-/** Remove lot annotations like {$50} {2024-01-01, $50} [2024-01-01] which Ledgedroid ignores. */
+/**
+ * Remove what Ledgedroid ignores after an amount, as hledger does: Ledger-style valuation expressions
+ * ((150 USD)) or ((market(amount, date, "USD"))), and lot annotations: lot costs {$50} {{$500}} {=$50},
+ * lot dates [2024-01-01] and lot notes (bought on sale). Costs, (@) and (@@) included, stay. Brackets only
+ * count after the amount has started, so nothing that could be the amount itself is removed.
+ */
 internal fun stripLotAnnotations(s: String): String {
     val out = StringBuilder()
     var inQuotes = false
-    var depth = 0
-    var close = ' '
-    for (c in s) {
-        if (depth == 0 && c == '"') inQuotes = !inQuotes
-        if (!inQuotes && depth == 0 && (c == '{' || c == '[')) {
-            depth = 1; close = if (c == '{') '}' else ']'; continue
+    var i = 0
+    /** The index just after the bracket matching the one at [from] (counting nested ones), or the end. */
+    fun skip(from: Int, open: Char, close: Char): Int {
+        var depth = 0
+        var j = from
+        while (j < s.length) {
+            if (s[j] == open) depth++
+            else if (s[j] == close) {
+                depth--
+                if (depth == 0) return j + 1
+            }
+            j++
         }
-        if (depth > 0) {
-            if (c == close) depth = 0; continue
+        return s.length
+    }
+    while (i < s.length) {
+        val c = s[i]
+        if (c == '"') {
+            inQuotes = !inQuotes
+            out.append(c); i++; continue
         }
-        out.append(c)
+        if (!inQuotes) {
+            when {
+                // A lot cost {…} or {{…}}, or a lot date […].
+                c == '{' -> { i = skip(i, '{', '}'); continue }
+                c == '[' -> { i = skip(i, '[', ']'); continue }
+                // After the amount: ((…)) a valuation expression, (…) a lot note; but (@) and (@@) are a cost.
+                c == '(' && out.isNotBlank() && s.getOrNull(i + 1) != '@' -> { i = skip(i, '(', ')'); continue }
+            }
+        }
+        out.append(c); i++
     }
     return out.toString()
 }
