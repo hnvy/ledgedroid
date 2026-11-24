@@ -20,6 +20,7 @@
   software maintained by Simon et al. If Ledgedroid is useful to you,
   please consider [sponsoring
   hledger](https://hledger.org/sponsor.html).
+  - Also consider giving a ⭐ (to help me get it accepted by F-Droid, Obtainium, etc. and hence giving you auto-update)
 - Ledgedroid is not affiliated with hledger.
 - You may find it useful to try out
   [Receiptdroid](https://github.com/hnvy/receiptdroid).
