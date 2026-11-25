@@ -66,6 +66,37 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Version $v, version code $code"
 
+      # Writes the version into app/build.gradle.kts (the fallback versionCode and versionName) and commits it to
+      # the branch, so the release's tag has the real version in its code. F-Droid reads the version from there.
+      - name: Put the version in build.gradle.kts
+        id: bump
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "branch" ]; then
+            echo "::error::Run this workflow on a branch (it commits the version to it), not on a tag."
+            exit 1
+          fi
+          f=app/build.gradle.kts
+          sed -i -e "/versionCode =/s/[0-9][0-9]*\$/$VERSION_CODE/" \
+                 -e "/versionName =/s/\"[^\"]*\"\$/\"$VERSION\"/" "$f"
+          # Both lines must now say this version, in case the file has changed shape.
+          if ! grep -q "toIntOrNull() ?: $VERSION_CODE\$" "$f" || ! grep -qF "?: \"$VERSION\"" "$f"; then
+            echo "::error::Couldn't put the version in $f: its versionCode or versionName line has changed shape."
+            exit 1
+          fi
+          if git diff --quiet -- "$f"; then
+            echo "$f already says $VERSION ($VERSION_CODE)"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Version $VERSION" -- "$f"
+            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+            echo "Committed version $VERSION ($VERSION_CODE) to $GITHUB_REF_NAME"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       # Settings › About: the text (this run's input, else the repository variable LEDGEDROID_ABOUT, else the
       # committed app/src/main/assets/about.md), and the build's details. Values come in through env, so text
       # typed into the input can't run as commands.
@@ -75,6 +106,7 @@ jobs:
           ABOUT_VARIABLE: ${{ vars.LEDGEDROID_ABOUT }}
           VERSION: ${{ steps.version.outputs.name }}
           VERSION_CODE: ${{ steps.version.outputs.code }}
+          SHA: ${{ steps.bump.outputs.sha }}
         run: |
           mkdir -p app/src/main/assets
           about=app/src/main/assets/about.md
@@ -91,7 +123,7 @@ jobs:
           {
             echo "version=$VERSION"
             echo "versionCode=$VERSION_CODE"
-            echo "commit=${GITHUB_SHA::7}"
+            echo "commit=${SHA::7}"
             echo "built=$(date -u +%Y-%m-%d)"
             echo "repository=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           } > app/src/main/assets/build.properties
@@ -170,13 +202,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.name }}
           FILE: ${{ steps.apk.outputs.file }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          SHA: ${{ steps.bump.outputs.sha }}
           DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             # Run again for the same version: replace the files.
             gh release upload "$TAG" "$FILE" "$FILE.sha256" --clobber
           else
-            flags=(--title "Ledgedroid $VERSION" --generate-notes --target "$GITHUB_SHA")
+            flags=(--title "Ledgedroid $VERSION" --generate-notes --target "$SHA")
             [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
             [ "$DRAFT" = "true" ] && flags+=(--draft)
             gh release create "$TAG" "$FILE" "$FILE.sha256" "${flags[@]}"
