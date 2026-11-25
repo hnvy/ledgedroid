@@ -17,8 +17,8 @@ android {
         applicationId = "app.ledgedroid"
         minSdk = 26
         targetSdk = 35
-        versionCode = System.getenv("LEDGEDROID_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("LEDGEDROID_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1.0"
+        versionCode = System.getenv("LEDGEDROID_VERSION_CODE")?.toIntOrNull() ?: 10902
+        versionName = System.getenv("LEDGEDROID_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.9.2"
     }
 
     signingConfigs {
