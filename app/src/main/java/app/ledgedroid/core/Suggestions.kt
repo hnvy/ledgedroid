@@ -35,6 +35,12 @@ class EntrySuggestions private constructor(
 
     fun isDeclaredPayee(payee: String): Boolean = payee.trim() in declaredPayeeSet
 
+    /** Every payee: those used, the most recent first, then those declared but never used, in declaration order. */
+    private val allPayees: List<String> by lazy {
+        val used = payees.toHashSet()
+        payees + declaredPayees.filter { it !in used }
+    }
+
     /** Declared payees, the most recently used first, then those never used in declaration order. */
     private val declaredByRecency: List<String> by lazy {
         val used = payees.filter { it in declaredPayeeSet }
@@ -96,7 +102,8 @@ class EntrySuggestions private constructor(
      */
     fun payeesMatching(text: String, limit: Int = 6, declaredOnly: Boolean = false, intelligent: Boolean = false): List<String> {
         val t = text.trim().lowercase()
-        val from = if (declaredOnly) declaredByRecency else payees
+        // Declared payees count even before they're used in a transaction.
+        val from = if (declaredOnly) declaredByRecency else allPayees
         if (t.isEmpty()) return from.take(limit)
         return from
             // Intelligent mode: every word typed, anywhere in the payee ("cafe corner" finds Corner Cafe).

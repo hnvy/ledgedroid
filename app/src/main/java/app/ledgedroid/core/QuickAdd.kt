@@ -220,7 +220,7 @@ class QuickAdd(
     private fun payeeCompletionsOf(t: String, limit: Int): List<QuickCompletion> {
         val fromTemplates = if (t.isEmpty()) templates.take(3) else templatesMatching(templates, t, 3)
         // Intelligent: whole descriptions, most used first, every word typed in them (as iadd).
-        val payees = if (smart) descriptionsByUse.asSequence().filter { it != t && Intelligent.matches(t, it, fuzzy = false) }.take(limit).toList()
+        val payees = if (smart) smartPayees.asSequence().filter { it != t && Intelligent.matches(t, it, fuzzy = false) }.take(limit).toList()
         else suggestions?.payeesMatching(t, limit, declaredOnly = declaredPayeesOnly).orEmpty()
         return (fromTemplates.map { QuickCompletion(it.name, it) } + payees.map { QuickCompletion(it) }).take(limit)
     }
@@ -362,6 +362,18 @@ class QuickAdd(
     }
 
     private val descriptionsByUse: List<String> by lazy { journal?.let { Intelligent.descriptions(it) }.orEmpty() }
+
+    /**
+     * Intelligent mode's payee suggestions: whole descriptions, most used first (only those with a declared
+     * payee, with Declared payees only), then the declared payees not used in a transaction yet.
+     */
+    private val smartPayees: List<String> by lazy {
+        val declared = journal?.declaredPayees.orEmpty()
+        val declaredSet = declared.toHashSet()
+        val used = if (declaredPayeesOnly) descriptionsByUse.filter { Payees.of(it) in declaredSet } else descriptionsByUse
+        val usedPayees = descriptionsByUse.map { Payees.of(it) }.toHashSet()
+        used + declared.filter { it !in usedPayees }
+    }
 
     /**
      * The one suggestion left for [text] at a payee or account prompt, for Enter to take (Settings › Enter
